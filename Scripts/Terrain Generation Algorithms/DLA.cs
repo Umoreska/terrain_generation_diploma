@@ -1,30 +1,44 @@
 
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using JetBrains.Annotations;
 using UnityEngine;
+using UnityEngine.Timeline;
 
 public class DLA : MonoBehaviour
 {
-    static public int initialGridSize = 5; // Початковий розмір сітки
+    static GameObject cubes_parent = null; 
+    static public int initialGridSize = 3; // Початковий розмір сітки
     public const int upscaleFactor = 2;    // Фактор збільшення розміру сітки
     static public int upscaleSteps = 3;     // Кількість етапів збільшення
     static int pixelsPerStep = 10;   // Кількість пікселів на кожному етапі
 
-    static DLA_Connection[,] connections_grid;
-    static int[,] grid;
+    static List<Pixel> pixels;
+    static private Pixel mainPixel;
+    static Pixel[,] grid;
     static float[,] height_map;
 
     public static void RunDLA() {
+        if(cubes_parent == null) {
+            cubes_parent = GameObject.Find("cubes_parent");
+        }else {
+            foreach(Transform child in cubes_parent.transform) {
+                Destroy(child.gameObject);
+            }
+        }
+
         // Початкова генерація
-        grid = new int[initialGridSize, initialGridSize];
+        grid = new Pixel[initialGridSize, initialGridSize];
         height_map = new float[initialGridSize, initialGridSize];
-        connections_grid = new DLA_Connection[initialGridSize,initialGridSize];
+        pixels = new List<Pixel>();
         
         // Початковий піксель в центрі
         Vector2Int start_pos = new Vector2Int(initialGridSize / 2, initialGridSize / 2);
-        grid[start_pos.x, start_pos.y] = 1;
-        connections_grid[start_pos.x, start_pos.y] = new DLA_Connection(start_pos, null, DLA_Connection.PixelType.New);
+
+        mainPixel = new Pixel(start_pos, null, Pixel.PixelType.New);
+        grid[start_pos.x, start_pos.y] = mainPixel;
+        pixels.Add(mainPixel);
         
         pixelsPerStep = grid.GetLength(0)*2;
         for (int i = 0; i < pixelsPerStep; i++) {
@@ -42,11 +56,16 @@ public class DLA : MonoBehaviour
             for (int i = 0; i < pixelsPerStep; i++) {
                 //AddRandomPixel();
             }
-            AddGridValuesToHeightMap(1f / Mathf.Pow(2, step+1));
             PrintPixelsOnScene(step+1);
+            AddGridValuesToHeightMap(1f / Mathf.Pow(2, step+1));
         }
 
-        //JiggleGrid();
+        Debug.Log($"pixels {pixels.Count}"); {
+            foreach (var pixel in pixels) {
+                Debug.Log($"{pixel.position}");
+            }
+        }
+
         AddGridValuesToHeightMap(1f / Mathf.Pow(2, upscaleSteps+1));
         BlurHeightMap();
         
@@ -56,7 +75,8 @@ public class DLA : MonoBehaviour
     static void AddGridValuesToHeightMap(float strength) {
         for(int i = 0; i < grid.GetLength(0); i++) {
             for(int j = 0; j < grid.GetLength(1); j++) {
-                height_map[i,j] += grid[i,j]*strength;
+                if(grid[i,j] == null) continue;
+                height_map[i,j] += grid[i,j].value*strength;
             }
         }
     }
@@ -64,16 +84,12 @@ public class DLA : MonoBehaviour
     static void PrintPixelsOnScene(int map_offset=0) {
 
         float max_value = float.MinValue;
-        map_offset = connections_grid.GetLength(0);
+        map_offset = grid.GetLength(0);
 
         // getting max-value
-        for(int i = 0; i < connections_grid.GetLength(0); i++) {
-            for(int j = 0; j < connections_grid.GetLength(1); j++) {
-                if(connections_grid[i,j]!=null) {
-                    if(Mathf.Abs(connections_grid[i,j].value) > max_value) {
-                        max_value = Mathf.Abs(connections_grid[i,j].value);
-                    }
-                }
+        foreach(var pixel in pixels) {
+            if(Mathf.Abs(pixel.value) > max_value) {
+                max_value = Mathf.Abs(pixel.value);
             }
         }
         max_value += 1; // so the max value will not be 0;
@@ -84,16 +100,11 @@ public class DLA : MonoBehaviour
         for(int i = 0; i < grid.GetLength(0); i++) {
             for(int j = 0; j < grid.GetLength(1); j++) {
 
-                if(grid[i,j] == 1 || connections_grid[i,j] != null) {
-                    if(grid[i,j] != 1 || connections_grid[i,j] == null) { // checking if one of them is not assigned.
-                        Debug.LogWarning($"grid and connection are not sync. grid[{i},{j}]: {grid[i,j]}; connection_grid[{i},{j}]: {connections_grid[i,j]}");Debug.Break();
-                        return;
-                    }
-
-                    float cube_height = max_value - Mathf.Abs(connections_grid[i,j].value);
-                    CreateCube(new Vector2Int(i + map_offset, j), cube_height, connections_grid[i,j].type);
+                if(grid[i,j] != null) {
+                    float cube_height = max_value - Mathf.Abs(grid[i,j].value);
+                    CreateCube(new Vector2Int(i + map_offset, j), cube_height, grid[i,j].type);
                 }else {
-                    CreateCube(new Vector2Int(i + map_offset,j), 0.001f, DLA_Connection.PixelType.None);
+                    CreateCube(new Vector2Int(i + map_offset,j), 0.001f, Pixel.PixelType.None);
                 }
 
                 //CreateCube(new Vector2Int(i + map_offset, j), height_map[i,j] + 0.001f);
@@ -102,23 +113,24 @@ public class DLA : MonoBehaviour
         }
     }
 
-    private static void CreateCube(Vector2Int position, float cube_height, DLA_Connection.PixelType pixel_type) {
+    private static void CreateCube(Vector2Int position, float cube_height, Pixel.PixelType pixel_type) {
         float position_y = cube_height / 2;
         GameObject pixel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        pixel.transform.parent = cubes_parent.transform;
         pixel.transform.localScale = new Vector3(0.8f, cube_height, 0.8f);
         pixel.transform.position = new Vector3(position.x,position_y,position.y);
 
         Renderer renderer = pixel.GetComponent<Renderer>();
         switch(pixel_type) {
-            case DLA_Connection.PixelType.None:
+            case Pixel.PixelType.None:
             break;
-            case DLA_Connection.PixelType.New:
+            case Pixel.PixelType.New:
                 renderer.material.color = Color.blue;
             break;
-            case DLA_Connection.PixelType.Mid:
+            case Pixel.PixelType.Mid:
                 renderer.material.color = Color.magenta;
             break;
-            case DLA_Connection.PixelType.Old:
+            case Pixel.PixelType.Old:
                 renderer.material.color = Color.red;
             break;
         }
@@ -134,7 +146,7 @@ public class DLA : MonoBehaviour
         }
         Debug.Log(line);
     }
-    static void PrintValues(DLA_Connection[,] grid) {
+    static void PrintValues(Pixel[,] grid) {
         string line = string.Empty;
         for(int i = 0; i < grid.GetLength(0); i++) {
             for(int j = 0; j < grid.GetLength(1); j++) {
@@ -153,9 +165,14 @@ public class DLA : MonoBehaviour
         Vector2Int randomPos;// = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
         int width = grid.GetLength(0);
         int height = grid.GetLength(1);
+
+        /*randomPos = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
+        while(grid[randomPos.x, randomPos.y] != null) {
+            randomPos = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
+        }*/
+
         // Randomly choose which edge to pick from: top, bottom, left, or right
         int edge = Random.Range(0, 4);
-
         switch (edge)
         {
             case 0: // Top edge
@@ -194,11 +211,15 @@ public class DLA : MonoBehaviour
             // Якщо піксель стикається з існуючим
             if (IsAdjacentToFrozenPixel(newPos, out var adjacent_pos)) {
                 Debug.Log($"now live in: {newPos}, connected to: {adjacent_pos}");
-                grid[newPos.x, newPos.y] = 1;
 
-                // Збереження зв'язку
-                DLA_Connection adjacent = connections_grid[adjacent_pos.x,adjacent_pos.y];
-                connections_grid[newPos.x, newPos.y] = new DLA_Connection(newPos, adjacent, DLA_Connection.PixelType.New);
+                Pixel adjacent_pixel = grid[adjacent_pos.x, adjacent_pos.y];
+                Pixel new_pixel = new Pixel(newPos, adjacent_pixel, Pixel.PixelType.New);
+                if(adjacent_pixel == mainPixel) {
+                    Debug.LogWarning("blyat i dont understand bro wtf");
+                    Debug.Log($"children count of mainPixel: {mainPixel.children.Count}");
+                }
+                grid[newPos.x, newPos.y] = new_pixel;
+                pixels.Add(new_pixel);
                 return;
             }
             pos = newPos;
@@ -210,19 +231,19 @@ public class DLA : MonoBehaviour
 
     static bool IsAdjacentToFrozenPixel(Vector2Int pos, out Vector2Int adjacent) {        
         adjacent = Vector2Int.zero;
-        if(IsInBounds(pos.x + 1, pos.y) && grid[pos.x + 1, pos.y] == 1) { // x+1, y
+        if(IsInBounds(pos.x + 1, pos.y) && grid[pos.x + 1, pos.y] != null) { // x+1, y
             adjacent = new Vector2Int(pos.x + 1, pos.y);
             return true;
         }
-        if(IsInBounds(pos.x - 1, pos.y) && grid[pos.x - 1, pos.y] == 1) { // x-1, y
+        if(IsInBounds(pos.x - 1, pos.y) && grid[pos.x - 1, pos.y] != null) { // x-1, y
             adjacent = new Vector2Int(pos.x - 1, pos.y);
             return true;
         }
-        if(IsInBounds(pos.x, pos.y+1) && grid[pos.x, pos.y+1] == 1) { // x, y+1
+        if(IsInBounds(pos.x, pos.y+1) && grid[pos.x, pos.y+1] != null) { // x, y+1
             adjacent = new Vector2Int(pos.x, pos.y+1);
             return true;
         }
-        if(IsInBounds(pos.x, pos.y-1) && grid[pos.x, pos.y-1] == 1) { // x, y-1
+        if(IsInBounds(pos.x, pos.y-1) && grid[pos.x, pos.y-1] != null) { // x, y-1
             adjacent = new Vector2Int(pos.x, pos.y-1);
             return true;
         }
@@ -231,134 +252,54 @@ public class DLA : MonoBehaviour
 
     static Vector2Int RandomDirection() => new Vector2Int(Random.Range(-1, 2), Random.Range(-1, 2));
 
-    static private List<DLA_Connection> position_changed = new List<DLA_Connection>();
     static void UpscaleGrid() {
         // Зберігаємо старий розмір та зв'язки
         int oldSize = grid.GetLength(0);
         int newSize = oldSize * upscaleFactor;
-        int[,] newGrid = new int[newSize, newSize];
-        DLA_Connection[,] newConnectionGrid = new DLA_Connection[newSize, newSize];
+        grid = new Pixel[newSize, newSize];
 
-        for(int i = 0; i < oldSize; i++) {
-            for(int j = 0; j < oldSize; j++) {
+        CreateConnections(mainPixel);
 
-                if(connections_grid[i,j] != null) {
+        CalculateValues();
 
-                    DLA_Connection start = connections_grid[i,j]; // its x in x -> y
-                    Vector2Int new_start_pos = new Vector2Int(i*upscaleFactor, j*upscaleFactor);
-                    newConnectionGrid[new_start_pos.x,new_start_pos.y] = start;
-                    newConnectionGrid[new_start_pos.x,new_start_pos.y].position = new Vector2Int(new_start_pos.x, new_start_pos.y); // updating position of start
-                    start.type = DLA_Connection.PixelType.Old;
-                    position_changed.Add(start);
-                    
-                    //position_changed.Add(start);
-                    Debug.Log($"start before: {i};{j}, after: {new_start_pos}"); // for debugging n shi
-
-                    newGrid[new_start_pos.x,new_start_pos.y] = 1;
-
-
-                    if(connections_grid[i,j].connected_to == null) { // central pixel is not connected to anyone
-                        Debug.Log("null");
-                        continue;
-                    }
-
-
-                    DLA_Connection end = connections_grid[i,j].connected_to; // its y in x -> y
-
-                    Vector2Int new_end_pos = end.position;
-                    if(position_changed.Contains(end) == false) {
-                        new_end_pos = new Vector2Int(end.position.x*upscaleFactor, end.position.y*upscaleFactor);
-                    }
-                    //newConnectionGrid[new_end_pos.x,new_end_pos.y] = end; <------------
-                    //newGrid[new_end_pos.x,new_end_pos.y] = 1; <-----------
-                    end.type = DLA_Connection.PixelType.Old;
-
-
-                    //Vector2Int mid_pos = new Vector2Int(Mathf.FloorToInt((new_start_pos.x + new_end_pos.x) / 2.0f), 
-                    //                              Mathf.FloorToInt((new_start_pos.y + new_end_pos.y) / 2.0f));
-
-                    Vector2Int mid_pos = new Vector2Int((new_start_pos.x + new_end_pos.x) / 2, (new_start_pos.y + new_end_pos.y) / 2);
-                                                    
-                    if(newConnectionGrid[mid_pos.x, mid_pos.y] != null) {//somehow, middle position between two pixels on NEW FUCKING GRID is already occupied by some fucker
-                        Debug.LogWarning($"WTF!!!. type of that sucker: {newConnectionGrid[mid_pos.x, mid_pos.y].type}");
-                        //continue;
-                    }
-
-                    DLA_Connection mid_dla = new DLA_Connection(mid_pos, end, DLA_Connection.PixelType.Mid, false);
-                    mid_dla.is_middle = true;
-                    newConnectionGrid[mid_pos.x, mid_pos.y] = mid_dla;
-                    newGrid[mid_pos.x,mid_pos.y] = 1;
-
-                    mid_dla.value = (start.value + end.value) / 2; // fuck it, let it be half idk U_U
-                    //newConnectionGrid[new_start_pos.x, new_start_pos.y].connected_to = newConnectionGrid[mid_pos.x, mid_pos.y];
-                    //newConnectionGrid[mid_pos.x, mid_pos.y].connected_to = newConnectionGrid[new_end_pos.x, new_end_pos.y];
-
-                    start.connected_to = mid_dla;
-                    mid_dla.connected_to = end;
-
-                    Debug.Log($"mid: {mid_pos.x};{mid_pos.y}: {newGrid[mid_pos.x,mid_pos.y]}, value: {newConnectionGrid[mid_pos.x, mid_pos.y].value}");
-                    Debug.Log($"end before: {end.position}, after: {new_end_pos}");
-                }
-            }
-        }
-        // Оновлюємо grid
-        grid = newGrid;
-        connections_grid = newConnectionGrid;
-        UpdateConnectionPositions();
-        position_changed.Clear();
-    }
-
-    private static void UpdateConnectionPositions() {
-        for(int i = 0; i < connections_grid.GetLength(0); i++) {
-            for(int j = 0; j < connections_grid.GetLength(1); j++) {
-                if(connections_grid[i,j] == null) continue;
-                
-                connections_grid[i,j].position = new Vector2Int(i,j);
-            }
+        foreach(var pixel in pixels) {
+            grid[pixel.position.x, pixel.position.y] = pixel;
         }
     }
 
-    static List<DLA_Connection> jiggled = new List<DLA_Connection>();
-    private static void JiggleGrid() {
-        for(int i = 0; i < connections_grid.GetLength(0); i++) {
-            for(int j = 0; j < connections_grid.GetLength(1); j++) {
-                if(connections_grid[i,j] == null || connections_grid[i,j].connected_to == null) {
-                    continue;
-                }
+    static private void CreateConnections(Pixel pixel) {
+ 
+        Pixel[] children = pixel.children.ToArray();
+        pixel.children.Clear();
+        Debug.Log($"Connection. children count: {children.Length}");
 
-                DLA_Connection target = connections_grid[i,j].connected_to;
-                if(jiggled.Contains(target)) {
-                    continue;
-                }
-                
-                Vector2Int connection_direction = target.position - connections_grid[i,j].position;
-                Vector2Int jiggle_direction;
-                if(Random.Range(0, 2) == 0) {
-                    jiggle_direction = new Vector2Int(-connection_direction.y, connection_direction.x);
-                }else {
-                    jiggle_direction = new Vector2Int(connection_direction.y, -connection_direction.x);
-                }
+        foreach(Pixel child in children) {
+            Vector2Int connecter_pos = pixel.position * upscaleFactor + (child.position - pixel.position);
+            Pixel connecter = new Pixel(connecter_pos, pixel, Pixel.PixelType.Mid);
+            pixels.Add(connecter);
 
-                Vector2Int jiggle_position = new Vector2Int(target.position.x + jiggle_direction.x, target.position.y + jiggle_direction.y);
-                if(IsInBounds(jiggle_position.x, jiggle_position.y) == false) {
-                    jiggle_direction = -jiggle_direction;
-                    jiggle_position = new Vector2Int(target.position.x + jiggle_direction.x, target.position.y + jiggle_direction.y);
-                    if(IsInBounds(jiggle_position.x, jiggle_position.y) == false) {
-                        // well, there is nothing we can do then
-                        return;
-                    }
-                }
-                // jiggle to side if it only is not occupied
-                if(connections_grid[jiggle_position.x, jiggle_position.y] == null) { // if its empty
-                    connections_grid[jiggle_position.x, jiggle_position.y] = target;
-                                grid[jiggle_position.x, jiggle_position.y] = 1;
-                    connections_grid[target.position.x, target.position.y] = null;
-                                grid[target.position.x, target.position.y] = 0;
 
-                    target.position = jiggle_position;
-                    jiggled.Add(target);
-                }
+            connecter.parent = pixel;
+            child.parent = connecter;
+            connecter.children.Add(child);
 
+            CreateConnections(child);
+        }
+        pixel.type = Pixel.PixelType.Old;
+        pixel.position *= upscaleFactor;
+    }
+
+    static private void CalculateValues() {
+        foreach(var pixel in pixels) {
+            if(pixel.children.Count == 0) { // then it the last one
+                int value = 1;
+                pixel.value = value;
+                Pixel parent = pixel.parent;
+                while(parent != null) {
+                    value++;
+                    parent.value = value;
+                    parent = parent.parent;
+                }
             }
         }
     }
@@ -434,26 +375,26 @@ public class DLA : MonoBehaviour
 
 
 
-    class DLA_Connection{  
+    class Pixel{  
         public enum PixelType{
             None ,New, Mid, Old
         }   
-        public PixelType type;   
+        public PixelType type; // for visualisation   
         public Vector2Int position;
-        public Vector2Int connected_position;
-        public DLA_Connection connected_to;
+        public Pixel parent; // this pixel is connected to parent
+        public List<Pixel> children; // pixels connected to this one
         public float value;
         public bool is_middle = false;
-        public DLA_Connection(Vector2Int positiion, DLA_Connection connected_to, PixelType type,bool assign_value=true){
+        public Pixel(Vector2Int positiion, Pixel parent, PixelType type){
             this.position = positiion;
             this.type = type;
-            if(connected_to != null) {
-                this.connected_to = connected_to;
-                connected_position = connected_to.position;
-                if(assign_value) {
-                    value = connected_to.value-1;
-                }
+
+            this.parent = parent;
+            children = new List<Pixel>();
+            if(parent != null){
+                parent.children.Add(this);
             }
+            
         }
     }
 

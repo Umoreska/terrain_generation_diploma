@@ -17,7 +17,7 @@ public static class MeshGenerator {
 		float topLeftZ = (meshSizeUnsimplified - 1) / 2f;
         
         int verticesPerLine = (meshSize-1) / meshSimplificationIncrement + 1;
-        Debug.Log(verticesPerLine);
+        //Debug.Log(verticesPerLine);
 
 		if(use_LOD==false) {
 			meshSimplificationIncrement = 1;
