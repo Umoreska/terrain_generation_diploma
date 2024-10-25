@@ -1,90 +1,133 @@
 
-using System.Collections;
+
+using UnityEngine;
+using Unity;
 using System.Collections.Generic;
+using System.Collections;
 using System.Reflection;
 using JetBrains.Annotations;
-using UnityEngine;
 using UnityEngine.Timeline;
+using System.Security.Claims;
 
-public class DLA : MonoBehaviour
-{
+
+public class DLA : MonoBehaviour {
+    [SerializeField] private MapDisplay map_display;
     static GameObject cubes_parent = null; 
     static public int initialGridSize = 3; // Початковий розмір сітки
-    public const int upscaleFactor = 2;    // Фактор збільшення розміру сітки
-    static public int upscaleSteps = 3;     // Кількість етапів збільшення
+    public const int UPSCALE_FACTOR = 2;    // Фактор збільшення розміру сітки
+    static public int upscaleSteps = 6;     // Кількість етапів збільшення
     static int pixelsPerStep = 10;   // Кількість пікселів на кожному етапі
 
-    static List<Pixel> pixels;
-    static private Pixel mainPixel;
-    static Pixel[,] grid;
-    static float[,] height_map;
+    static int step = 1; // how often this dla was upscaled already 
 
-    public static void RunDLA() {
+    static readonly Vector2Int[] offsets = { new Vector2Int(0,1), new Vector2Int(1,0), new Vector2Int(0,-1), new Vector2Int(-1,0) };
+
+    static List<Pixel> pixels;
+    static public Pixel mainPixel;
+    static Pixel[,] grid;
+    static float[] image;
+
+    static int size;
+
+    public void RunDLA(int start_size, int upscale_count) {
+
+        // parent for cubes that are used for pixels visualisation
         if(cubes_parent == null) {
             cubes_parent = GameObject.Find("cubes_parent");
+            if(cubes_parent == null) {
+                cubes_parent = new GameObject();
+            }
         }else {
             foreach(Transform child in cubes_parent.transform) {
                 Destroy(child.gameObject);
             }
         }
 
+        initialGridSize = start_size;
         // Початкова генерація
         grid = new Pixel[initialGridSize, initialGridSize];
-        height_map = new float[initialGridSize, initialGridSize];
+        image = new float[initialGridSize*initialGridSize];
         pixels = new List<Pixel>();
         
         // Початковий піксель в центрі
         Vector2Int start_pos = new Vector2Int(initialGridSize / 2, initialGridSize / 2);
 
-        mainPixel = new Pixel(start_pos, null, Pixel.PixelType.New);
+        mainPixel = new Pixel(start_pos, null, Pixel.PixelType.MAIN);
         grid[start_pos.x, start_pos.y] = mainPixel;
         pixels.Add(mainPixel);
         
         pixelsPerStep = grid.GetLength(0)*2;
-        for (int i = 0; i < pixelsPerStep; i++) {
-            AddRandomPixel();
-        }
-        AddGridValuesToHeightMap(1f);
-        PrintPixelsOnScene(0);
 
+
+        System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();        
+        sw.Start();
+
+        AddPixels(pixelsPerStep);
+        UpscaleTexture();
+
+        sw.Stop();
+        Debug.Log($"initialized dla. added: {pixelsPerStep}. spent: {sw.ElapsedMilliseconds} ms");
+
+        //PrintPixelsOnScene(0);
+
+        upscaleSteps = upscale_count;
         // Генерація пікселів і зв'язків на кожному етапі
         for (int step = 0; step < upscaleSteps; step++) {
+            sw.Restart();
+
             UpscaleGrid();
-            UpscaleHeightMap();
-            // Після масштабування сітки додаємо пікселі
-            pixelsPerStep = grid.GetLength(0)*2;
-            for (int i = 0; i < pixelsPerStep; i++) {
-                //AddRandomPixel();
-            }
-            PrintPixelsOnScene(step+1);
-            AddGridValuesToHeightMap(1f / Mathf.Pow(2, step+1));
+            AddPixels(grid.GetLength(0)/2 * grid.GetLength(0)/2);
+            UpscaleTexture();
+            
+            sw.Stop();
+            Debug.Log($"step: {step}. added: {grid.GetLength(0)/2 * grid.GetLength(0)/2}. spent: {sw.ElapsedMilliseconds} ms");
         }
-
-        Debug.Log($"pixels {pixels.Count}"); {
-            foreach (var pixel in pixels) {
-                Debug.Log($"{pixel.position}");
-            }
-        }
-
-        AddGridValuesToHeightMap(1f / Mathf.Pow(2, upscaleSteps+1));
-        BlurHeightMap();
+        //PrintPixelsOnScene(0);
+        map_display.DrawNoiseMap(image, grid.GetLength(0));
         
+        /* Example of a generation:
+        DLA dla(12);
+        dla.AddPixels(12);
+        dla.UpscaleTexture();
         
+        dla.Upscale();
+        dla.AddPixels(24);
+        dla.UpscaleTexture();
+        
+        dla.Upscale();
+        dla.AddPixels(9 * 24);
+        dla.UpscaleTexture();
+
+        dla.Upscale();
+        dla.AddPixels(9 * 9 * 24);
+        dla.UpscaleTexture();
+
+        dla.Upscale();
+        dla.AddPixels(3 * 9 * 9 * 24);
+        dla.UpscaleTexture();
+        
+        dla.GenTexture();
+
+        Note that the steps UpscaleTexture(); and Upscale(); have to be used consecutively.
+        */
     }
 
     static void AddGridValuesToHeightMap(float strength) {
+        int width = grid.GetLength(0);
         for(int i = 0; i < grid.GetLength(0); i++) {
             for(int j = 0; j < grid.GetLength(1); j++) {
                 if(grid[i,j] == null) continue;
-                height_map[i,j] += grid[i,j].value*strength;
+                image[i*width + j] += grid[i,j].value*strength;
             }
         }
     }
 
     static void PrintPixelsOnScene(int map_offset=0) {
+        mainPixel.type = Pixel.PixelType.MAIN;
 
         float max_value = float.MinValue;
         map_offset = grid.GetLength(0);
+        int width = grid.GetLength(0);
 
         // getting max-value
         foreach(var pixel in pixels) {
@@ -101,27 +144,35 @@ public class DLA : MonoBehaviour
             for(int j = 0; j < grid.GetLength(1); j++) {
 
                 if(grid[i,j] != null) {
-                    float cube_height = max_value - Mathf.Abs(grid[i,j].value);
-                    CreateCube(new Vector2Int(i + map_offset, j), cube_height, grid[i,j].type);
+                    if(grid[i,j] == mainPixel) {
+                        Debug.Log($"printing mainPixel. its pos: {grid[i,j].position}");
+                    }
+                    //float cube_height = max_value - Mathf.Abs(grid[i,j].value);
+                    CreateCube(new Vector2Int(i + map_offset, j), grid[i,j].value, grid[i,j]);
                 }else {
-                    CreateCube(new Vector2Int(i + map_offset,j), 0.001f, Pixel.PixelType.None);
+                    CreateCube(new Vector2Int(i + map_offset,j), 0.001f, null);
                 }
 
-                //CreateCube(new Vector2Int(i + map_offset, j), height_map[i,j] + 0.001f);
+                //CreateCube(new Vector2Int(i + map_offset, j + map_offset), image[i*width + j] + 0.001f, null);
 
             }
         }
     }
 
-    private static void CreateCube(Vector2Int position, float cube_height, Pixel.PixelType pixel_type) {
+    private static void CreateCube(Vector2Int position, float cube_height, Pixel pixel) {
         float position_y = cube_height / 2;
-        GameObject pixel = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        pixel.transform.parent = cubes_parent.transform;
-        pixel.transform.localScale = new Vector3(0.8f, cube_height, 0.8f);
-        pixel.transform.position = new Vector3(position.x,position_y,position.y);
+        GameObject cube_pixel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube_pixel.transform.parent = cubes_parent.transform;
+        cube_pixel.transform.localScale = new Vector3(0.8f, cube_height, 0.8f);
+        cube_pixel.transform.position = new Vector3(position.x,position_y,position.y);
 
-        Renderer renderer = pixel.GetComponent<Renderer>();
-        switch(pixel_type) {
+        Renderer renderer = cube_pixel.GetComponent<Renderer>();
+        if(pixel == null) {
+            return;
+        }else {
+            cube_pixel.AddComponent<CubePixel>().pixel = pixel;
+        }
+        switch(pixel.type) {
             case Pixel.PixelType.None:
             break;
             case Pixel.PixelType.New:
@@ -129,9 +180,15 @@ public class DLA : MonoBehaviour
             break;
             case Pixel.PixelType.Mid:
                 renderer.material.color = Color.magenta;
+                break;
+            case Pixel.PixelType.Last:
+                renderer.material.color = Color.white;
             break;
             case Pixel.PixelType.Old:
                 renderer.material.color = Color.red;
+            break;
+            case Pixel.PixelType.MAIN:
+                renderer.material.color = Color.yellow;
             break;
         }
     }
@@ -161,18 +218,31 @@ public class DLA : MonoBehaviour
         Debug.Log(line);
     }
 
-    static void AddRandomPixel() {
-        Vector2Int randomPos;// = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
+    static void AddPixels(int amount=1) {
+        if(amount < 1) {
+            return;
+        }
+
+        Vector2Int randomPos;
         int width = grid.GetLength(0);
         int height = grid.GetLength(1);
 
-        /*randomPos = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
-        while(grid[randomPos.x, randomPos.y] != null) {
-            randomPos = new Vector2Int(Random.Range(0, grid.GetLength(0)), Random.Range(0, grid.GetLength(1)));
-        }*/
+        for(int i = 0; i < amount; i++) {
+
+
+            randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
+            while(grid[randomPos.x, randomPos.y] != null) { // change position untill grid element is null 
+                randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
+            }
+
+            //Debug.Log($"born in {randomPos}");
+            MovePixelToConnection(randomPos);
+        }
+
+        
 
         // Randomly choose which edge to pick from: top, bottom, left, or right
-        int edge = Random.Range(0, 4);
+        /*int edge = Random.Range(0, 4);
         switch (edge)
         {
             case 0: // Top edge
@@ -190,72 +260,55 @@ public class DLA : MonoBehaviour
             default:
                 randomPos = Vector2Int.zero; // Fallback
                 break;
-        }
-        Debug.Log($"born in {randomPos}");
-        MovePixelToConnection(randomPos);
+        }*/
     }
 
 
 
     static void MovePixelToConnection(Vector2Int pos)
     {
-        while (true)
+        int size = grid.GetLength(0);
+        while (grid[pos.x, pos.y] == null) 
         {
-            Vector2Int newPos = pos + RandomDirection();
+            foreach(var offset in offsets) {
+                if(pos.x + offset.x > 0 && pos.x + offset.x < size-1 && pos.y + offset.y > 0 && pos.y + offset.y < size-1) {
+                    if(grid[pos.x + offset.x, pos.y + offset.y] != null)
+                    {
+                        //pixels.emplace_back(new Pixel());
+                        //pixels.back()->position = pos;
+                        //pixels.back()->parent = grid[pos.x + offset.x][pos.y + offset.y];
+                        //grid[pos.x + offset.x][pos.y + offset.y]->children.emplace_back(pixels.back());
+                        Pixel parent = grid[pos.x + offset.x, pos.y + offset.y];
+                        Pixel new_pixel = new Pixel(pos, parent, Pixel.PixelType.New);
+                        pixels.Add(new_pixel);
 
-            // making sure it is in bounds
-            while(IsInBounds(newPos.x, newPos.y) == false) {
-                newPos = pos + RandomDirection();
-            }
-            
-            // Якщо піксель стикається з існуючим
-            if (IsAdjacentToFrozenPixel(newPos, out var adjacent_pos)) {
-                Debug.Log($"now live in: {newPos}, connected to: {adjacent_pos}");
-
-                Pixel adjacent_pixel = grid[adjacent_pos.x, adjacent_pos.y];
-                Pixel new_pixel = new Pixel(newPos, adjacent_pixel, Pixel.PixelType.New);
-                if(adjacent_pixel == mainPixel) {
-                    Debug.LogWarning("blyat i dont understand bro wtf");
-                    Debug.Log($"children count of mainPixel: {mainPixel.children.Count}");
+                        //grid[pos.x][pos.y] = pixels.back();
+                        grid[pos.x, pos.y] = new_pixel;
+                        break;
+                    }
                 }
-                grid[newPos.x, newPos.y] = new_pixel;
-                pixels.Add(new_pixel);
-                return;
             }
-            pos = newPos;
+
+            if(grid[pos.x, pos.y] == null) {
+                pos += offsets[Random.Range(0, 4)];
+            }
+
+            // Correct possible overshoots over the grid.
+            pos.x = Mathf.Clamp(pos.x, 0, size-1);
+            pos.y = Mathf.Clamp(pos.y, 0, size-1);
+
         }
     }
     static bool IsInBounds(int x, int y) {
         return x >= 0 && x < grid.GetLength(0) && y >= 0 && y < grid.GetLength(1);
     }
 
-    static bool IsAdjacentToFrozenPixel(Vector2Int pos, out Vector2Int adjacent) {        
-        adjacent = Vector2Int.zero;
-        if(IsInBounds(pos.x + 1, pos.y) && grid[pos.x + 1, pos.y] != null) { // x+1, y
-            adjacent = new Vector2Int(pos.x + 1, pos.y);
-            return true;
-        }
-        if(IsInBounds(pos.x - 1, pos.y) && grid[pos.x - 1, pos.y] != null) { // x-1, y
-            adjacent = new Vector2Int(pos.x - 1, pos.y);
-            return true;
-        }
-        if(IsInBounds(pos.x, pos.y+1) && grid[pos.x, pos.y+1] != null) { // x, y+1
-            adjacent = new Vector2Int(pos.x, pos.y+1);
-            return true;
-        }
-        if(IsInBounds(pos.x, pos.y-1) && grid[pos.x, pos.y-1] != null) { // x, y-1
-            adjacent = new Vector2Int(pos.x, pos.y-1);
-            return true;
-        }
-        return false;
-    }
 
-    static Vector2Int RandomDirection() => new Vector2Int(Random.Range(-1, 2), Random.Range(-1, 2));
 
     static void UpscaleGrid() {
         // Зберігаємо старий розмір та зв'язки
         int oldSize = grid.GetLength(0);
-        int newSize = oldSize * upscaleFactor;
+        int newSize = oldSize * UPSCALE_FACTOR;
         grid = new Pixel[newSize, newSize];
 
         CreateConnections(mainPixel);
@@ -267,32 +320,113 @@ public class DLA : MonoBehaviour
         }
     }
 
+    static void UpscaleTexture() {
+
+        CalculateValues();
+
+        int image_size = grid.GetLength(0);
+
+        // place current grid on the image
+        for(int x=0; x<image_size; x++) {
+            for(int y=0; y<image_size; y++) {
+            
+                float v = grid[x,y] != null ? 1f - 1f / (1f + 0.5f * grid[x,y].value) : 0f;
+
+                int index = x * image_size + y;
+                float fv = 1f - 1f / (1f + (1f / step) * v + 1.25f * image[index]);
+
+                image[index + 0] = fv; // why +0 tho??
+
+            }
+        }
+        ++step;
+
+        // upscale the current image
+        List<float> new_image_list = new List<float>();
+        float multiplier = 1f / UPSCALE_FACTOR;
+        //Debug.Log($"multiplier: {multiplier}");
+        for(int x = 0; x < image_size * UPSCALE_FACTOR; x++) {
+            for(int y = 0; y < image_size * UPSCALE_FACTOR; y++) {
+
+                int mx = (int)Mathf.Floor(x * multiplier) * image_size; // mx - middle pixel.x
+                int bx = x > 0 ? (int)Mathf.Floor((x - 1) * multiplier) * image_size : mx; // bx - pixel.x on the left from middle.x one
+
+                int my = (int)Mathf.Floor(y * multiplier); // same but with y coordinate
+                int by = y > 0 ? (int)Mathf.Floor((y - 1) * multiplier) : my;
+                
+                //Debug.Log($"image length: {image.Length}; mx: {mx}; bx: {bx}; my: {my}; by: {by};\nbx+by: {bx+by}; bx+my: {bx+my}; mx+by: {mx+by}; mx+my: {mx+my}");
+                float v = 0.25f * image[bx + by] + 0.25f * image[bx + my] + 0.25f * image[mx + by] + 0.25f * image[mx + my];
+
+                new_image_list.Add(v);
+            }
+        }
+
+        image = new_image_list.ToArray();
+        new_image_list.Clear();
+
+        image_size *= UPSCALE_FACTOR;
+        // bluring image using a convolution aproximation of gaussian blur
+         for(int x = 0; x < image_size; x++) {
+            for(int y = 0; y < image_size; y++) {
+
+                int mx = x * image_size;
+                int bx = x > 0 ? (x-1) * image_size : mx;
+                int ax = x < image_size-1 ? (x+1) * image_size : mx;
+
+                int my = y;
+                int by = y > 0 ? y-1 : my;
+                int ay = y < image_size-1 ? y+1 : my;
+                
+                //     min                      middle                         max
+                float bxby = image[bx + by]; float bxmy = image[bx + my]; float bxay = image[bx + ay];
+                float mxby = image[mx + by]; float mxmy = image[mx + my]; float mxay = image[mx + ay];
+                float axby = image[ax + by]; float axmy = image[ax + my]; float axay = image[ax + ay];             
+
+                float minWeight = 4f * (Random.Range(1, 11) / 10f);
+                float midWeight = 8f * (Random.Range(1, 11) / 10f);
+                float maxWeight = 16f * (Random.Range(1, 11) / 10f);
+                
+                float v = 1f / (4f*minWeight + 4f*midWeight + maxWeight) * (
+                        minWeight*bxby + midWeight*bxmy + minWeight*bxay +
+                        midWeight*mxby + maxWeight*mxmy + midWeight*mxay +
+                        minWeight*axby + midWeight*axmy + minWeight*axay
+                );
+
+                new_image_list.Add(v);
+            }
+        }
+
+
+
+    }
+
     static private void CreateConnections(Pixel pixel) {
  
         Pixel[] children = pixel.children.ToArray();
         pixel.children.Clear();
-        Debug.Log($"Connection. children count: {children.Length}");
 
         foreach(Pixel child in children) {
-            Vector2Int connecter_pos = pixel.position * upscaleFactor + (child.position - pixel.position);
+            Vector2Int connecter_pos = pixel.position * UPSCALE_FACTOR + (child.position - pixel.position);
             Pixel connecter = new Pixel(connecter_pos, pixel, Pixel.PixelType.Mid);
             pixels.Add(connecter);
 
 
-            connecter.parent = pixel;
+            //connecter.parent = pixel;
             child.parent = connecter;
-            connecter.children.Add(child);
+            //pixel.children.Add(connector)
+            connecter.children.Add(child);            
 
             CreateConnections(child);
         }
         pixel.type = Pixel.PixelType.Old;
-        pixel.position *= upscaleFactor;
+        pixel.position *= UPSCALE_FACTOR;
     }
 
     static private void CalculateValues() {
         foreach(var pixel in pixels) {
             if(pixel.children.Count == 0) { // then it the last one
                 int value = 1;
+                pixel.type = Pixel.PixelType.Last;
                 pixel.value = value;
                 Pixel parent = pixel.parent;
                 while(parent != null) {
@@ -304,98 +438,34 @@ public class DLA : MonoBehaviour
         }
     }
 
-    static void UpscaleHeightMap() {
-        int oldSize = height_map.GetLength(0);
-        int newSize = oldSize * upscaleFactor;
-        float[,] newHeightMap = new float[newSize, newSize];
-
-        // Масштабування з використанням лінійної інтерполяції
-        for (int x = 0; x < newSize; x++)
-        {
-            for (int y = 0; y < newSize; y++)
-            {
-                float oldX = (float)x / (newSize - 1) * (oldSize - 1);
-                float oldY = (float)y / (newSize - 1) * (oldSize - 1);
-
-                int xFloor = Mathf.FloorToInt(oldX);
-                int yFloor = Mathf.FloorToInt(oldY);
-                int xCeil = Mathf.Min(xFloor + 1, oldSize - 1);
-                int yCeil = Mathf.Min(yFloor + 1, oldSize - 1);
-
-                float xLerp = oldX - xFloor;
-                float yLerp = oldY - yFloor;
-
-                // Лінійна інтерполяція між сусідніми пікселями
-                float top = Mathf.Lerp(height_map[xFloor, yFloor], height_map[xCeil, yFloor], xLerp);
-                float bottom = Mathf.Lerp(height_map[xFloor, yCeil], height_map[xCeil, yCeil], xLerp);
-                float heightValue = Mathf.Lerp(top, bottom, yLerp);
-
-                //newHeightMap[x, y] = Mathf.RoundToInt(heightValue);
-                newHeightMap[x, y] = heightValue;
-            }
-        }
-
-        height_map = newHeightMap; // Оновлюємо карту висот
-    }
-
-
-    static void BlurHeightMap() {
-        float[,] blurredMap = new float[height_map.GetLength(0), height_map.GetLength(1)];
-
-        // Просте ядро для згортки (усереднення сусідніх пікселів)
-        int[,] kernel = { { 1, 1, 1 }, { 1, 8, 1 }, { 1, 1, 1 } };
-        int kernelSum = 9; // Сума всіх значень ядра
-
-        // Проходимо по кожному пікселю карти висот, крім країв
-        for (int x = 1; x < height_map.GetLength(0) - 1; x++)
-        {
-            for (int y = 1; y < height_map.GetLength(1) - 1; y++)
-            {
-                float sum = 0;
-
-                // Згортка з сусідами (3x3 сусідні елементи)
-                for (int i = -1; i <= 1; i++)
-                {
-                    for (int j = -1; j <= 1; j++)
-                    {
-                        sum += height_map[x + i, y + j] * kernel[i + 1, j + 1];
-                    }
-                }
-
-                // Усереднене значення для пікселя
-                //blurredMap[x, y] = Mathf.RoundToInt(sum / (float)kernelSum);
-                blurredMap[x, y] = sum / kernelSum;
-            }
-        }
-
-        height_map = blurredMap; // Оновлюємо масив висот після згладжування
-    }
+    
 
 
 
 
 
-    class Pixel{  
+
+
+    public class Pixel{  
         public enum PixelType{
-            None ,New, Mid, Old
+            None ,New, Mid, Old, Last, MAIN
         }   
         public PixelType type; // for visualisation   
         public Vector2Int position;
         public Pixel parent; // this pixel is connected to parent
         public List<Pixel> children; // pixels connected to this one
         public float value;
-        public bool is_middle = false;
-        public Pixel(Vector2Int positiion, Pixel parent, PixelType type){
-            this.position = positiion;
+        public Pixel(Vector2Int position, Pixel parent, PixelType type) {
+            this.position = position;
             this.type = type;
 
             this.parent = parent;
+
             children = new List<Pixel>();
-            if(parent != null){
-                parent.children.Add(this);
-            }
+            parent?.children.Add(this);
             
         }
+
     }
 
 }

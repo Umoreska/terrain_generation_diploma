@@ -11,7 +11,7 @@ public class MapGenerator : MonoBehaviour {
 	public FractalPerlinNoise.NormalizeMode normalizeMode;
 	[SerializeField] MapDisplay display;
 
-    public const int mapChunkSize = 239; // +2 = 241
+	public bool useFlatShading;
 
 	[Range(0,6)]
 	public int editorPreviewLevelOfDetail;
@@ -37,14 +37,31 @@ public class MapGenerator : MonoBehaviour {
 
 	private float[,] falloff_map;
 
+
+	public static MapGenerator Instance;
+
 	private void Awake() {
 		falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
+	}
+
+
+	public static int mapChunkSize {
+		get{
+			if(Instance == null) {
+				Instance = FindFirstObjectByType<MapGenerator>();
+			}
+			if(Instance.useFlatShading) {
+				return 95;
+			}else {
+				return 239;
+			}
+		}
 	}
 
 	private MapData GenerateMapData(Vector2 center) {
 		
         float[,] noiseMap = FractalPerlinNoise.GenerateHeights(mapChunkSize+2, // 239+2 = 241
-																(int)seed, noiseScale, (int)octaves, persistance, lacunarity, center+offset, normalizeMode);
+																(int)seed, noiseScale, (int)octaves, persistance, lacunarity, center+offset, normalizeMode, FractalPerlinNoise.Noise.UnityPerlin);
 
 
 		Color[] colourMap = new Color[mapChunkSize * mapChunkSize];
@@ -90,7 +107,7 @@ public class MapGenerator : MonoBehaviour {
 		new Thread(threadStart).Start();
 	}
 	private void MeshDataThread(MapData mapData, int lod,  Action<MeshData> callback) {
-		MeshData data = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, heightMultiplier, mesh_height_curve, lod);
+		MeshData data = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, heightMultiplier, mesh_height_curve, lod, useFlatShading);
 		lock(meshDataThreadInfoQueue) {
 			meshDataThreadInfoQueue.Enqueue(new MapThreadInfo<MeshData>(callback, data));
 		}
@@ -123,7 +140,7 @@ public class MapGenerator : MonoBehaviour {
             display.DrawColorMap(data.heightMap, data.colorMap);
 		} else if (drawMode == DrawMode.Mesh) {
 			//display.DrawMesh (MeshGenerator.GenerateTerrainMesh (noiseMap), TextureGenerator.TextureFromColourMap (colourMap, mapWidth, mapHeight));
-            display.DrawMesh(data.heightMap, data.colorMap, heightMultiplier, mesh_height_curve, editorPreviewLevelOfDetail);
+            display.DrawMesh(data.heightMap, data.colorMap, heightMultiplier, mesh_height_curve, editorPreviewLevelOfDetail, useFlatShading);
 		} else if(drawMode == DrawMode.FallofMap) {
 			display.DrawFalloffMap(mapChunkSize);
 		}

@@ -7,6 +7,7 @@ using UnityEngine.UI;
 
 public class UIController : MonoBehaviour
 {
+    [SerializeField] private DLA dla;
     [SerializeField] private DrawMode draw_mode;
     [SerializeField] private MapDisplay map_display;
     [SerializeField] private MapGenerator map_generator;
@@ -65,7 +66,8 @@ public class UIController : MonoBehaviour
                 Vector2 offset = new Vector2(offset_x_slider.value, offset_y_slider.value);
                 map = FractalPerlinNoise.GenerateHeights(_size, 
                                                     (int)seed_slider.value, scale_slider.value, 
-                                                    (int)octaves_slider.value, persistance_slider.value, lacunarity_slider.value, offset, FractalPerlinNoise.NormalizeMode.Local);
+                                                    (int)octaves_slider.value, persistance_slider.value, lacunarity_slider.value, offset, 
+                                                    FractalPerlinNoise.NormalizeMode.Local, FractalPerlinNoise.Noise.UnityPerlin);
             break;
             case HeightMapAlgorithm.DiamondSquare:
                 map = DiamondSquareTerrain.GenerateHeights(_size+1, roughness_slider.value, (int)seed_slider.value, false);
@@ -74,7 +76,7 @@ public class UIController : MonoBehaviour
                 map = VoronoiTerrain.GenerateHeights(_size, (int)point_count_slider.value, (int)seed_slider.value, false);
             break;
             case HeightMapAlgorithm.DLA:
-                DLA.RunDLA();
+                dla.RunDLA(3, 10);
             return;
             default:
                 Debug.LogWarning("Using undefined algorithm: " + algorithm);
@@ -86,7 +88,7 @@ public class UIController : MonoBehaviour
             /*terrain_data.heightmapResolution = _size + 1;
             terrain_data.size = new Vector3(_size, heightScale, _size);
             terrain_data.SetHeights(0, 0, map);*/
-            map_display.DrawMesh(map, max_height_slider.value, map_generator.mesh_height_curve);
+            map_display.DrawMesh(map, max_height_slider.value, map_generator.mesh_height_curve, false);
         }else {
             if((DrawMode)draw_mode_dropdown.value == DrawMode.NoiseMap) {
                 map_display.DrawNoiseMap(map);

@@ -1,8 +1,9 @@
 
+using System.Runtime.ConstrainedExecution;
 using UnityEngine;
 public static class MeshGenerator {
 
-	public static MeshData GenerateTerrainMesh(float[,] heightMap, float height_multiplier, AnimationCurve _height_curve, int level_of_detail, bool use_LOD=true) {
+	public static MeshData GenerateTerrainMesh(float[,] heightMap, float height_multiplier, AnimationCurve _height_curve, int level_of_detail, bool useFlatShading) {
 		// height_curve.Evaluate returns weird results when is used from differrent threads at the same time
 		// so i create new one
 		AnimationCurve height_curve = new AnimationCurve(_height_curve.keys);
@@ -19,12 +20,7 @@ public static class MeshGenerator {
         int verticesPerLine = (meshSize-1) / meshSimplificationIncrement + 1;
         //Debug.Log(verticesPerLine);
 
-		if(use_LOD==false) {
-			meshSimplificationIncrement = 1;
-			verticesPerLine = meshSize;
-		}
-
-		MeshData meshData = new MeshData (verticesPerLine);
+		MeshData meshData = new MeshData (verticesPerLine, useFlatShading);
 		//int vertexIndex = 0;
 
 		int[,] vertexIndicesMap = new int[borderedSize, borderedSize];
@@ -70,9 +66,12 @@ public static class MeshGenerator {
 					meshData.AddTriangle (d,a,b);
 				}
 
-				vertexIndex++;
+				//vertexIndex++;
 			}
 		}
+
+		//meshData.BakeNormals();
+		meshData.Finalise();
 
 		return meshData;
 
@@ -83,14 +82,18 @@ public class MeshData {
 	Vector3[] vertices;
 	int[] triangles;
 	Vector2[] uvs;
+	Vector3[] baked_normals;
 
 	Vector3[] border_vertices;
 	int[] border_triangles;
 
 	int triangleIndex;
 	int borderTrianleIndex;
+	bool use_flat_shading;
 
-	public MeshData(int vertices_per_line) {
+	public MeshData(int vertices_per_line, bool use_flat_shading) {
+		this.use_flat_shading = use_flat_shading;
+
 		vertices = new Vector3[vertices_per_line * vertices_per_line];
 		uvs = new Vector2[vertices_per_line * vertices_per_line];
 		triangles = new int[(vertices_per_line-1)*(vertices_per_line-1)*6];
@@ -125,7 +128,8 @@ public class MeshData {
 
 	}
 
-	Vector3[] CalculateNormals() { // i ahve no idea how this works
+	// so the normal are consistant on the edges of chunks
+	Vector3[] CalculateNormals() { // i have no idea how this works
 		Vector3[] vertex_normals = new Vector3[vertices.Length];
 		int traingle_count = triangles.Length/3;
 
@@ -178,14 +182,47 @@ public class MeshData {
 		return Vector3.Cross(side_AB, side_AC);
 	}
 
+	public void Finalise() {
+		if(use_flat_shading) {
+			FlateShaded();
+		}else {
+			BakeNormals();
+		}
+	}
+
+	private void BakeNormals() {
+		baked_normals = CalculateNormals();
+	}
+
+	private void FlateShaded() {
+		Vector3[] flat_shaded_vertices = new Vector3[triangles.Length];
+		Vector2[] flat_shaded_uvs = new Vector2[triangles.Length];
+
+		for(int i = 0 ; i < triangles.Length; i++) {
+
+			flat_shaded_vertices[i] = vertices[triangles[i]];
+			flat_shaded_uvs[i] = uvs[triangles[i]];
+
+			triangles[i] = i;
+		}
+
+		vertices = flat_shaded_vertices;
+		uvs = flat_shaded_uvs;
+	}
+
 	public Mesh CreateMesh() {
 		Mesh mesh = new Mesh ();
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 		mesh.vertices = vertices;
 		mesh.triangles = triangles;
 		mesh.uv = uvs;
+		if(use_flat_shading) {
+			mesh.RecalculateNormals();
+		}else {
+			mesh.normals = baked_normals;
+		}
 		//mesh.RecalculateNormals();
-		mesh.normals = CalculateNormals();;
+		//mesh.normals = CalculateNormals();
 		return mesh;
 	}
 

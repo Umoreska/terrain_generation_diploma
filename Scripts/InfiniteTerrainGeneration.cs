@@ -13,6 +13,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
     [SerializeField] private LODInfo[] detailLevels;
     [SerializeField] private static float max_view_dist; // how far viewer can see
     [SerializeField] private Transform viewer;
+    private LayerMask ground_layer;
     private static MapGenerator mapGenerator;
     public static Vector2 viewer_position, old_viewer_postition;
     [SerializeField] int chunk_size; 
@@ -31,6 +32,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
         chunkVisibleAmount = Mathf.RoundToInt(max_view_dist / chunk_size);
 
         UpdateVisibleChunks();
+        ground_layer = LayerMask.NameToLayer("Ground") ;
     }
 
     private void Update() {
@@ -43,7 +45,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
 
     public void UpdateVisibleChunks() {
 
-        for(int i = 0; i< visible_chunk_last_update.Count; i++) {
+        for(int i = 0; i < visible_chunk_last_update.Count; i++) {
             visible_chunk_last_update[i].SetVisible(false);
         }
         visible_chunk_last_update.Clear();
@@ -62,11 +64,8 @@ public class InfiniteTerrainGeneration : MonoBehaviour
 
                 if(terrain_chunk_dictionary.ContainsKey(chunk_coord)) {
                     terrain_chunk_dictionary[chunk_coord].UpdateChunk();
-
-                   
-
                 }else {
-                    terrain_chunk_dictionary.Add(chunk_coord, new TerrainChunk(chunk_coord, chunk_size, detailLevels, this.transform, mapMaterial));
+                    terrain_chunk_dictionary.Add(chunk_coord, new TerrainChunk(chunk_coord, chunk_size, detailLevels, this.transform, mapMaterial, ground_layer));
                 }
             }
         }
@@ -82,14 +81,15 @@ public class InfiniteTerrainGeneration : MonoBehaviour
         MeshCollider meshCollider;
 
         LODInfo[] detail_level;
-        LODMesh[] lod_meshes;
+        LODMesh[] lod_meshes; // saves mesh for every LevelOfDetail
+        LODMesh collision_lod;
 
         private MapData map_data;
         private bool map_data_received;
 
         private int prev_lod_index = -1; // it has to be updated first time
 
-        public TerrainChunk(Vector2 coord, int size, LODInfo[] detail_level, Transform parent, Material material) {
+        public TerrainChunk(Vector2 coord, int size, LODInfo[] detail_level, Transform parent, Material material, LayerMask ground_layer) {
             this.detail_level = detail_level;
 
             position = coord * size;
@@ -97,6 +97,8 @@ public class InfiniteTerrainGeneration : MonoBehaviour
             bounds = new Bounds(position,Vector2.one*size);
             
             meshObject = new GameObject("Terrain Chunk");
+            meshObject.layer = ground_layer;
+            Debug.Log(meshObject.layer);
             meshObject.transform.position = position_on_scene * scale;
             meshObject.transform.localScale = Vector3.one * scale;
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
@@ -112,6 +114,9 @@ public class InfiniteTerrainGeneration : MonoBehaviour
 
             for(int i = 0; i <lod_meshes.Length; i++) {
                 lod_meshes[i] = new LODMesh(detail_level[i].lod, UpdateChunk);
+                if(detail_level[i].use_for_collider) {
+                    collision_lod = lod_meshes[i];
+                }
             }
 
             mapGenerator.RequestMapData(position, OnMapDataReceived);
@@ -154,9 +159,17 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                     if(lod_mesh.has_mesh) {
                         meshFilter.mesh = lod_mesh.mesh;
                         prev_lod_index = lod_index;
-                        meshCollider.sharedMesh = lod_mesh.mesh;
+                        //meshCollider.sharedMesh = lod_mesh.mesh;
+
                     }else if(lod_mesh.has_requested_mesh == false) {
                         lod_mesh.RequestMesh(map_data);
+                    }
+                }
+                if(lod_index == 0) { // if terrain is close enough
+                    if(collision_lod.has_mesh) {
+                        meshCollider.sharedMesh = collision_lod.mesh;
+                    }else if(collision_lod.has_requested_mesh == false) {
+                        collision_lod.RequestMesh(map_data);
                     }
                 }
                 visible_chunk_last_update.Add(this);
@@ -203,6 +216,8 @@ public class InfiniteTerrainGeneration : MonoBehaviour
 [Serializable] public struct LODInfo{
         public int lod;
         public float visible_distance_threshold; // when wiever is outside of distance it will switch over next level of detail 
+
+        public bool use_for_collider;
 
     }
 

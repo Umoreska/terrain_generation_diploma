@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public enum DrawMode {
@@ -24,6 +25,16 @@ public class MapDisplay : MonoBehaviour
             }
         }
         DrawTexture(color_map, width, height);
+    }
+
+    public void DrawNoiseMap(float[] noise_map, int size) {
+        Color[] color_map = new Color[size * size];
+        for(int i = 0; i < size; i++) {
+            for(int j = 0; j < size; j++) {
+                color_map[i*size + j] = Color.Lerp(Color.black, Color.white, noise_map[i*size + j]);
+            }
+        }
+        DrawTexture(color_map, size, size);
     }
 
     public void DrawColorMap(float[,] noise_map) {
@@ -63,8 +74,8 @@ public class MapDisplay : MonoBehaviour
         return color_map;
     }
 
-    private Texture2D CreateTexture(Color[] color_map, int width, int height) {
-        Texture2D texture = new Texture2D(width-2, height-2);
+    public static Texture2D CreateTexture(Color[] color_map, int width, int height) {
+        Texture2D texture = new Texture2D(width, height);
         texture.filterMode = FilterMode.Point;
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.SetPixels(color_map);
@@ -73,25 +84,25 @@ public class MapDisplay : MonoBehaviour
     }
 
     private void DrawTexture(Color[] color_map, int width, int height) {
-        texture_renderer.sharedMaterial.mainTexture = CreateTexture(color_map, width, height);
+        texture_renderer.sharedMaterial.mainTexture = CreateTexture(color_map, width-2, height-2);
         texture_renderer.transform.localScale = new Vector3(width, 1, height);
     }
 
-    public void DrawMesh(float[,] noise_map, float height_multiplier, AnimationCurve mesh_height_curve) {
+    public void DrawMesh(float[,] noise_map, float height_multiplier, AnimationCurve mesh_height_curve, bool useFlatShading) {
         Color[] color_map = CreateColorMap(noise_map);
-        DrawMesh(noise_map, color_map, height_multiplier, mesh_height_curve, 0);
+        DrawMesh(noise_map, color_map, height_multiplier, mesh_height_curve, 0, useFlatShading);
     }
 
-    public void DrawMesh(float[,] noise_map, Color[] colourMap, float height_multiplier, AnimationCurve mesh_height_curve, int level_of_detail) {        
+    public void DrawMesh(float[,] noise_map, Color[] colourMap, float height_multiplier, AnimationCurve mesh_height_curve, int level_of_detail, bool useFlatShading) {        
 
         //Color[] color_map = CreateColorMap(noise_map);
-        MeshData data = MeshGenerator.GenerateTerrainMesh(noise_map, height_multiplier, mesh_height_curve, level_of_detail);
+        MeshData data = MeshGenerator.GenerateTerrainMesh(noise_map, height_multiplier*meshRenderer.transform.localScale.x, mesh_height_curve, level_of_detail, useFlatShading);
 
         meshFilter.sharedMesh = data.CreateMesh();        
 
         int width = noise_map.GetLength(0);
         int height = noise_map.GetLength(1);
-        meshRenderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width, height);
+        meshRenderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width-2, height-2);
     }
 
 }
