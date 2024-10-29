@@ -69,7 +69,7 @@ public class Tester : MonoBehaviour
         terrainObject.transform.position = new Vector3(size/2, 0, -size/2);
 
         Terrain terrain = terrainObject.AddComponent<Terrain>();        
-        TerrainCollider terrainCollider = terrainObject.AddComponent<TerrainCollider>();
+        TerrainCollider terrainCollider = terrainObject.AddComponent<TerrainCollider>();        
         TerrainData terrainData = terrain.terrainData = new TerrainData();
 
         terrain.materialTemplate = terrain_material;

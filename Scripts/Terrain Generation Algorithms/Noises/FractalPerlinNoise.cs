@@ -69,25 +69,25 @@ public class FractalPerlinNoise {
                     float xCoord = (x-halfSize + octave_offsets[i].x) / _scale * frequency;
                     float yCoord = (y-halfSize + octave_offsets[i].y) / _scale * frequency;
 
-                    switch(noise_type) {
+                    noise_height += (Mathf.PerlinNoise(xCoord, yCoord) * 2 - 1) * amplitude; // L
+                    /*switch(noise_type) {
                         case Noise.UnityPerlin:
-                            noise_height += (Mathf.PerlinNoise(xCoord, yCoord) * 2 - 1) * amplitude; // L
-                        break;
+                            break;
                         case Noise.PerlinImplementaion:
                             noise_height += (PerlinImplementation.Noise(xCoord, yCoord) * 2 - 1) * amplitude; // L
-                        break;
+                            break;
                         case Noise.FastNoiseLiteSimplex:
                         case Noise.FastNoiseLitePerlin:
                             noise_height += (fast_noise.GetNoise(xCoord, yCoord) * 2 - 1) * amplitude; // L
-                        break;
+                            break;
                         case Noise.ImprovedNoise2D:
                             noise_height += ((float)ImprovedNoise2D.noise(xCoord, yCoord) * 2 - 1) * amplitude; // L
-                        break;
+                            break;
                         default:
                             Debug.Log($"no such noise: {noise_type}; using UnityPerlin");
                             noise_height += (Mathf.PerlinNoise(xCoord, yCoord) * 2 - 1) * amplitude; // L
-                        break;
-                    }
+                            break;
+                    }*/
 
                     amplitude *= _persistence;
                     frequency *= _lacunarity;

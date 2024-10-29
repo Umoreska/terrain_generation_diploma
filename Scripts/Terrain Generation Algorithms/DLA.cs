@@ -8,6 +8,8 @@ using System.Reflection;
 using JetBrains.Annotations;
 using UnityEngine.Timeline;
 using System.Security.Claims;
+using Mono.Cecil.Cil;
+using UnityEngine.Rendering;
 
 
 public class DLA : MonoBehaviour {
@@ -17,7 +19,6 @@ public class DLA : MonoBehaviour {
     public const int UPSCALE_FACTOR = 2;    // Фактор збільшення розміру сітки
     static public int upscaleSteps = 6;     // Кількість етапів збільшення
     static int pixelsPerStep = 10;   // Кількість пікселів на кожному етапі
-
     static int step = 1; // how often this dla was upscaled already 
 
     static readonly Vector2Int[] offsets = { new Vector2Int(0,1), new Vector2Int(1,0), new Vector2Int(0,-1), new Vector2Int(-1,0) };
@@ -27,9 +28,8 @@ public class DLA : MonoBehaviour {
     static Pixel[,] grid;
     static float[] image;
 
-    static int size;
-
-    public void RunDLA(int start_size, int upscale_count) {
+    public static float[,] RunDLA(int start_size, int upscale_count) {
+        step = 1;
 
         // parent for cubes that are used for pixels visualisation
         if(cubes_parent == null) {
@@ -56,13 +56,13 @@ public class DLA : MonoBehaviour {
         grid[start_pos.x, start_pos.y] = mainPixel;
         pixels.Add(mainPixel);
         
-        pixelsPerStep = grid.GetLength(0)*2;
+        pixelsPerStep = grid.GetLength(0);
 
 
         System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();        
         sw.Start();
 
-        AddPixels(pixelsPerStep);
+        AddPixels(PixelsPerStep(0));
         UpscaleTexture();
 
         sw.Stop();
@@ -76,34 +76,77 @@ public class DLA : MonoBehaviour {
             sw.Restart();
 
             UpscaleGrid();
-            AddPixels(grid.GetLength(0)/2 * grid.GetLength(0)/2);
+            AddPixels(PixelsPerStep(step+1));
             UpscaleTexture();
             
             sw.Stop();
-            Debug.Log($"step: {step}. added: {grid.GetLength(0)/2 * grid.GetLength(0)/2}. spent: {sw.ElapsedMilliseconds} ms");
+            Debug.Log($"step: {step}. added: {PixelsPerStep(step+1)}. spent: {sw.ElapsedMilliseconds} ms");
         }
         //PrintPixelsOnScene(0);
-        map_display.DrawNoiseMap(image, grid.GetLength(0));
+
+        int n = image.Length;
+        int size = (int)Mathf.Sqrt(n);
+        if (size * size != n) {
+            Debug.LogWarning($"(int)sqrt(image.Length)^2 != image.Length. in other words, image is not a square");
+            Debug.Break();
+            return new float[0,0]; // wtf is that
+        }
+        //image = MyBlur(image, size);
+        image = GaussBlur(image, size);
+
+
+
+        // 1d -> 2d
+        float[,] matrix = new float[size, size];
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                matrix[i, j] = image[i * size + j];
+            }
+        }
+
+        // finding min & max
+        float min = int.MaxValue;
+        float max = int.MinValue;
+        for(int i = 0; i < matrix.GetLength(0); i++) {
+            for(int j = 0; j < matrix.GetLength(1); j++) {
+                if(matrix[i,j] > max) {
+                    max = matrix[i,j];
+                }
+                if(matrix[i,j] < min) {
+                    min = matrix[i,j];
+                }
+            }
+        }
+
+        // normilizing
+        for(int i = 0; i < matrix.GetLength(0); i++) {
+            for(int j = 0; j < matrix.GetLength(1); j++) {
+                matrix[i,j] = Mathf.InverseLerp(min, max, matrix[i,j]);
+            }
+        }
+
+
+        return matrix;
         
         /* Example of a generation:
         DLA dla(12);
         dla.AddPixels(12);
         dla.UpscaleTexture();
         
-        dla.Upscale();
+        dla.Upscale(); // 24
         dla.AddPixels(24);
         dla.UpscaleTexture();
         
-        dla.Upscale();
-        dla.AddPixels(9 * 24);
+        dla.Upscale(); // 48
+        dla.AddPixels(9 * 24); // 216
         dla.UpscaleTexture();
 
-        dla.Upscale();
-        dla.AddPixels(9 * 9 * 24);
+        dla.Upscale(); // 96
+        dla.AddPixels(9 * 9 * 24); // 1944
         dla.UpscaleTexture();
 
-        dla.Upscale();
-        dla.AddPixels(3 * 9 * 9 * 24);
+        dla.Upscale(); // 192
+        dla.AddPixels(3 * 9 * 9 * 24); // 5832
         dla.UpscaleTexture();
         
         dla.GenTexture();
@@ -112,14 +155,12 @@ public class DLA : MonoBehaviour {
         */
     }
 
-    static void AddGridValuesToHeightMap(float strength) {
-        int width = grid.GetLength(0);
-        for(int i = 0; i < grid.GetLength(0); i++) {
-            for(int j = 0; j < grid.GetLength(1); j++) {
-                if(grid[i,j] == null) continue;
-                image[i*width + j] += grid[i,j].value*strength;
-            }
-        }
+    private static float[,] Turn1DTo2D(float[] array) {
+        return null;
+    }
+
+    public static int PixelsPerStep(int step) {
+        return (int)(12 * Mathf.Pow(2f, step % 2) * Mathf.Pow(9f, Mathf.Floor(step / 2.0f)));
     }
 
     static void PrintPixelsOnScene(int map_offset=0) {
@@ -218,7 +259,7 @@ public class DLA : MonoBehaviour {
         Debug.Log(line);
     }
 
-    static void AddPixels(int amount=1) {
+    static void AddPixels(int amount=1, bool on_edge=false) {
         if(amount < 1) {
             return;
         }
@@ -228,39 +269,33 @@ public class DLA : MonoBehaviour {
         int height = grid.GetLength(1);
 
         for(int i = 0; i < amount; i++) {
-
-
-            randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
-            while(grid[randomPos.x, randomPos.y] != null) { // change position untill grid element is null 
-                randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
+            if(on_edge) {
+                 // Randomly choose which edge to pick from: top, bottom, left, or right
+                int edge = Random.Range(0, 4);
+                randomPos = edge switch
+                {
+                    // Top edge
+                    0 => new Vector2Int(Random.Range(0, width), 0),
+                    // Bottom edge
+                    1 => new Vector2Int(Random.Range(0, width), height - 1),
+                    // Left edge
+                    2 => new Vector2Int(0, Random.Range(0, height)),
+                    // Right edge
+                    3 => new Vector2Int(width - 1, Random.Range(0, height)),
+                    _ => Vector2Int.zero,// Fallback
+                };
             }
-
-            //Debug.Log($"born in {randomPos}");
+            else {
+                randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
+                while(grid[randomPos.x, randomPos.y] != null) { // change position untill grid element is null 
+                    randomPos = new Vector2Int(Random.Range(0, width), Random.Range(0, height));
+                }
+            }
             MovePixelToConnection(randomPos);
         }
 
         
 
-        // Randomly choose which edge to pick from: top, bottom, left, or right
-        /*int edge = Random.Range(0, 4);
-        switch (edge)
-        {
-            case 0: // Top edge
-                randomPos = new Vector2Int(Random.Range(0, width), 0);
-                break;
-            case 1: // Bottom edge
-                randomPos = new Vector2Int(Random.Range(0, width), height - 1);
-                break;
-            case 2: // Left edge
-                randomPos = new Vector2Int(0, Random.Range(0, height));
-                break;
-            case 3: // Right edge
-                randomPos = new Vector2Int(width - 1, Random.Range(0, height));
-                break;
-            default:
-                randomPos = Vector2Int.zero; // Fallback
-                break;
-        }*/
     }
 
 
@@ -299,11 +334,6 @@ public class DLA : MonoBehaviour {
 
         }
     }
-    static bool IsInBounds(int x, int y) {
-        return x >= 0 && x < grid.GetLength(0) && y >= 0 && y < grid.GetLength(1);
-    }
-
-
 
     static void UpscaleGrid() {
         // Зберігаємо старий розмір та зв'язки
@@ -313,11 +343,46 @@ public class DLA : MonoBehaviour {
 
         CreateConnections(mainPixel);
 
-        CalculateValues();
+ 
+
 
         foreach(var pixel in pixels) {
             grid[pixel.position.x, pixel.position.y] = pixel;
         }
+    }
+
+    private static float[] GaussBlur(float[] image, int image_size) {
+        List<float> new_image_list = new List<float>();
+        for(int x = 0; x < image_size; x++) {
+            for(int y = 0; y < image_size; y++) {
+
+                int mx = x * image_size;
+                int bx = x > 0 ? (x-1) * image_size : mx;
+                int ax = x < image_size-1 ? (x+1) * image_size : mx;
+
+                int my = y;
+                int by = y > 0 ? y-1 : my;
+                int ay = y < image_size-1 ? y+1 : my;
+                
+                //     min                      middle                         max
+                float bxby = image[bx + by]; float bxmy = image[bx + my]; float bxay = image[bx + ay];
+                float mxby = image[mx + by]; float mxmy = image[mx + my]; float mxay = image[mx + ay];
+                float axby = image[ax + by]; float axmy = image[ax + my]; float axay = image[ax + ay];             
+
+                float minWeight = 4f * (Random.Range(1, 11) / 10f);
+                float midWeight = 8f * (Random.Range(1, 11) / 10f);
+                float maxWeight = 16f * (Random.Range(1, 11) / 10f);
+                
+                float v = 1f / (4f*minWeight + 4f*midWeight + maxWeight) * (
+                        minWeight*bxby + midWeight*bxmy + minWeight*bxay +
+                        midWeight*mxby + maxWeight*mxmy + midWeight*mxay +
+                        minWeight*axby + midWeight*axmy + minWeight*axay
+                );
+
+                new_image_list.Add(v);
+            }
+        }
+        return new_image_list.ToArray();
     }
 
     static void UpscaleTexture() {
@@ -366,38 +431,31 @@ public class DLA : MonoBehaviour {
 
         image_size *= UPSCALE_FACTOR;
         // bluring image using a convolution aproximation of gaussian blur
-         for(int x = 0; x < image_size; x++) {
-            for(int y = 0; y < image_size; y++) {
+        //image = MyBlur(image, image_size);
+        image = GaussBlur(image, image_size);
 
-                int mx = x * image_size;
-                int bx = x > 0 ? (x-1) * image_size : mx;
-                int ax = x < image_size-1 ? (x+1) * image_size : mx;
 
-                int my = y;
-                int by = y > 0 ? y-1 : my;
-                int ay = y < image_size-1 ? y+1 : my;
-                
-                //     min                      middle                         max
-                float bxby = image[bx + by]; float bxmy = image[bx + my]; float bxay = image[bx + ay];
-                float mxby = image[mx + by]; float mxmy = image[mx + my]; float mxay = image[mx + ay];
-                float axby = image[ax + by]; float axmy = image[ax + my]; float axay = image[ax + ay];             
 
-                float minWeight = 4f * (Random.Range(1, 11) / 10f);
-                float midWeight = 8f * (Random.Range(1, 11) / 10f);
-                float maxWeight = 16f * (Random.Range(1, 11) / 10f);
-                
-                float v = 1f / (4f*minWeight + 4f*midWeight + maxWeight) * (
-                        minWeight*bxby + midWeight*bxmy + minWeight*bxay +
-                        midWeight*mxby + maxWeight*mxmy + midWeight*mxay +
-                        minWeight*axby + midWeight*axmy + minWeight*axay
-                );
+    }
 
-                new_image_list.Add(v);
+    private static float[] MyBlur(float[] image, int size) {
+        float[] new_image = new float[size*size];
+        for (int x = 1; x < size - 1; x++) {
+            for (int y = 1; y < size - 1; y++) {
+                float sum = 0f;
+                int count = 0;
+
+                for (int i = -1; i <= 1; i++) {
+                    for (int j = -1; j <= 1; j++) {
+                        sum += image[(x + i)*size + y + j];
+                        count++;
+                    }
+                }
+
+                new_image[x*size + y] = sum / count;
             }
         }
-
-
-
+        return new_image;
     }
 
     static private void CreateConnections(Pixel pixel) {
@@ -411,6 +469,21 @@ public class DLA : MonoBehaviour {
             pixels.Add(connecter);
 
 
+            // jiggle time !!!
+            Vector2Int ortho = child.position - pixel.position;
+            ortho = new Vector2Int(ortho.y, ortho.x); // swap x and y
+
+            if(ortho.x != 0)
+                ortho.x = ortho.x / Mathf.Abs(ortho.x);
+            if(ortho.y != 0)
+                ortho.y = ortho.y / Mathf.Abs(ortho.y);
+
+            int ran = Random.Range(0, 11);
+            if(ran >= 9) connecter.position += ortho;
+            else if(ran >= 7) connecter.position -= ortho;
+
+
+            // finish up linking
             //connecter.parent = pixel;
             child.parent = connecter;
             //pixel.children.Add(connector)

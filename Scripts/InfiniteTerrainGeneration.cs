@@ -6,8 +6,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 
 public class InfiniteTerrainGeneration : MonoBehaviour
-{
-    private const float scale = 2f;
+{    
     private const float viewer_move_distance_threshold_for_update = 25f;
     private const float squared_viewer_move_distance_threshold_for_update = viewer_move_distance_threshold_for_update*viewer_move_distance_threshold_for_update;
     [SerializeField] private LODInfo[] detailLevels;
@@ -36,7 +35,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
     }
 
     private void Update() {
-        viewer_position = new Vector2(viewer.position.x, viewer.position.z) / scale;
+        viewer_position = new Vector2(viewer.position.x, viewer.position.z) / mapGenerator.terrain_data.uniform_scale;
         if( (old_viewer_postition - viewer_position).sqrMagnitude > squared_viewer_move_distance_threshold_for_update) {
             UpdateVisibleChunks();
             old_viewer_postition = viewer_position;
@@ -97,17 +96,19 @@ public class InfiniteTerrainGeneration : MonoBehaviour
             bounds = new Bounds(position,Vector2.one*size);
             
             meshObject = new GameObject("Terrain Chunk");
-            meshObject.layer = ground_layer;
+            meshObject.layer = LayerMask.NameToLayer("Ground");//ground_layer;
             Debug.Log(meshObject.layer);
-            meshObject.transform.position = position_on_scene * scale;
-            meshObject.transform.localScale = Vector3.one * scale;
+
+            meshObject.transform.position = position_on_scene * mapGenerator.terrain_data.uniform_scale;
+            meshObject.transform.parent = parent;
+            meshObject.transform.localScale = Vector3.one * mapGenerator.terrain_data.uniform_scale;
+
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
             meshRenderer.material = material;
 
             //meshObject.transform.localScale = Vector3.one * size /10f; // /10f because plane is already 10 units in wide and length with scale 1
-            meshObject.transform.parent = parent;
             
             SetVisible(false);
             lod_meshes = new LODMesh[detail_level.Length];

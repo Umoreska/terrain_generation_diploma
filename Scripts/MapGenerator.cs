@@ -8,28 +8,16 @@ public class MapGenerator : MonoBehaviour {
 
 	public enum DrawMode {NoiseMap, ColourMap, Mesh, FallofMap};
 	public DrawMode drawMode;
-	public FractalPerlinNoise.NormalizeMode normalizeMode;
+
 	[SerializeField] MapDisplay display;
 
-	public bool useFlatShading;
+	public NoiseData noise_data;
+	public MyTerrainData terrain_data;
 
 	[Range(0,6)]
 	public int editorPreviewLevelOfDetail;
-	public float noiseScale;
-    public float heightMultiplier;
-
-	public int octaves;
-	[Range(0,1)]
-	public float persistance;
-	public float lacunarity;
-
-	public int seed;
-	public Vector2 offset;
-
-	public bool useFalloff=false;
-
+	
 	public bool autoUpdate;
-	public AnimationCurve mesh_height_curve;
 
 	public TerrainType[] regions;
 	private Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
@@ -41,7 +29,13 @@ public class MapGenerator : MonoBehaviour {
 	public static MapGenerator Instance;
 
 	private void Awake() {
-		falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
+		//falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
+	}
+
+	private void OnValuesUpdated() {
+		if(Application.isPlaying == false) {
+			DrawMapInEditor();
+		}
 	}
 
 
@@ -50,7 +44,7 @@ public class MapGenerator : MonoBehaviour {
 			if(Instance == null) {
 				Instance = FindFirstObjectByType<MapGenerator>();
 			}
-			if(Instance.useFlatShading) {
+			if(Instance.terrain_data.useFlatShading) {
 				return 95;
 			}else {
 				return 239;
@@ -61,20 +55,30 @@ public class MapGenerator : MonoBehaviour {
 	private MapData GenerateMapData(Vector2 center) {
 		
         float[,] noiseMap = FractalPerlinNoise.GenerateHeights(mapChunkSize+2, // 239+2 = 241
-																(int)seed, noiseScale, (int)octaves, persistance, lacunarity, center+offset, normalizeMode, FractalPerlinNoise.Noise.UnityPerlin);
+			(int)noise_data.seed, noise_data.noiseScale, (int)noise_data.octaves, noise_data.persistance, noise_data.lacunarity,
+			center+noise_data.offset, noise_data.normalizeMode, FractalPerlinNoise.Noise.UnityPerlin);
 
+		if(terrain_data.useFalloff) {
+			falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize+2);
+			for (int y = 0; y < mapChunkSize+2; y++) {
+				for (int x = 0; x < mapChunkSize+2; x++) {
+					if(terrain_data.useFalloff) {
+						noiseMap[x,y] = Mathf.Clamp(noiseMap[x,y]-falloff_map[x,y], 0, 1);
+					}
+					
+				}
+		}
+		}
 
-		Color[] colourMap = new Color[mapChunkSize * mapChunkSize];
+		// creating color map from regions
+		Color[] colorMap = new Color[(mapChunkSize+2) * (mapChunkSize+2)];
 		for (int y = 0; y < mapChunkSize; y++) {
 			for (int x = 0; x < mapChunkSize; x++) {
-				if(useFalloff) {
-					noiseMap[x,y] = Mathf.Clamp (noiseMap[x,y]-falloff_map[x,y], 0, 1);
-				}
 				float currentHeight = noiseMap[x, y];
 				for (int i = 0; i < regions.Length; i++) {
 
 					if (currentHeight >= regions[i].max_height) {
-						colourMap [y * mapChunkSize + x] = regions[i].color;
+						colorMap [y * mapChunkSize + x] = regions[i].color;
 					}else {
 						break;
 					}
@@ -82,7 +86,7 @@ public class MapGenerator : MonoBehaviour {
 			}
 		}
 
-		return new MapData(noiseMap, colourMap);
+		return new MapData(noiseMap, colorMap);
 
 	}
 
@@ -107,7 +111,7 @@ public class MapGenerator : MonoBehaviour {
 		new Thread(threadStart).Start();
 	}
 	private void MeshDataThread(MapData mapData, int lod,  Action<MeshData> callback) {
-		MeshData data = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, heightMultiplier, mesh_height_curve, lod, useFlatShading);
+		MeshData data = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, terrain_data.heightMultiplier, terrain_data.mesh_height_curve, lod, terrain_data.useFlatShading);
 		lock(meshDataThreadInfoQueue) {
 			meshDataThreadInfoQueue.Enqueue(new MapThreadInfo<MeshData>(callback, data));
 		}
@@ -140,20 +144,22 @@ public class MapGenerator : MonoBehaviour {
             display.DrawColorMap(data.heightMap, data.colorMap);
 		} else if (drawMode == DrawMode.Mesh) {
 			//display.DrawMesh (MeshGenerator.GenerateTerrainMesh (noiseMap), TextureGenerator.TextureFromColourMap (colourMap, mapWidth, mapHeight));
-            display.DrawMesh(data.heightMap, data.colorMap, heightMultiplier, mesh_height_curve, editorPreviewLevelOfDetail, useFlatShading);
+            display.DrawMesh(data.heightMap, data.colorMap, terrain_data.heightMultiplier, terrain_data.mesh_height_curve, editorPreviewLevelOfDetail, terrain_data.useFlatShading, true);
 		} else if(drawMode == DrawMode.FallofMap) {
 			display.DrawFalloffMap(mapChunkSize);
 		}
 	}
 
 	void OnValidate() {
-		if (lacunarity < 1) {
-			lacunarity = 1;
+		if(terrain_data != null) {
+			terrain_data.on_value_updated -= OnValuesUpdated; // so it will not duplicate. when we do -=, it does not require it to actually exist
+			terrain_data.on_value_updated += OnValuesUpdated;
 		}
-		if (octaves < 0) {
-			octaves = 0;
+		if(noise_data != null) {
+			noise_data.on_value_updated -= OnValuesUpdated;
+			noise_data.on_value_updated += OnValuesUpdated;
 		}
-		falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
+		
 	}
 
 	struct MapThreadInfo<T>{
@@ -165,6 +171,14 @@ public class MapGenerator : MonoBehaviour {
 		}
 	}
 }
+
+
+[Serializable] public struct TerrainType{
+    public string name;
+    public float max_height;
+    public Color color;
+}
+
 
 public struct MapData{
 	public readonly float[,] heightMap;

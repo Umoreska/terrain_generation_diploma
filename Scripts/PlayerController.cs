@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,7 +19,13 @@ public class PlayerController : MonoBehaviour
         cam = Camera.main.transform;
         ground_layer = LayerMask.NameToLayer("Ground") ;
         controller = GetComponent<CharacterController>();
-        PlacePlayerOnTerrainSurface();
+        StartCoroutine(Delay(1f, PlacePlayerOnTerrainSurface));
+        //PlacePlayerOnTerrainSurface();
+    }
+
+    private IEnumerator Delay(float time, Action action) {
+        yield return new WaitForSeconds(time);
+        action?.Invoke();
     }
 
     private void PlacePlayerOnTerrainSurface() {
@@ -31,8 +38,12 @@ public class PlayerController : MonoBehaviour
         Ray ray = new Ray(rayStartPos, Vector3.down);
         RaycastHit hit;
 
+        Debug.DrawLine(rayStartPos, rayStartPos+Vector3.down*ray_check_height, Color.red, 10f);
+
+
+        Debug.Log($"ray start pos:{rayStartPos}; end pos:{rayStartPos+Vector3.down*ray_check_height};");
         // Cast the ray downward to check for a collision with the terrain or other colliders
-        if (Physics.Raycast(ray, out hit, Mathf.Infinity, ground_layer)) {
+        if (Physics.Raycast(ray, out hit, ray_check_height*2)) {
             // Move the character to the hit point
             transform.position = new Vector3(characterPosition.x, hit.point.y, characterPosition.z);
             Debug.Log("Character moved to: " + transform.position);
