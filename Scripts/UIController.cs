@@ -3,6 +3,7 @@ using TMPro;
 using UnityEngine;
 using Cinemachine;
 using UnityEngine.UI;
+using System.Collections;
 
 public class UIController : MonoBehaviour
 {
@@ -12,13 +13,12 @@ public class UIController : MonoBehaviour
     [SerializeField] private MapDisplay map_display;
     [SerializeField] private MapGenerator map_generator;
     [SerializeField] private Terrain terrain;
-    private MyTerrainData terrain_data;
     [SerializeField] protected float heightScale = 50f;
-    [SerializeField] private GameObject draw_mode_input, scale_input, seed_input, offset_x_input, offset_y_input, roughness_input, octaves_input, persistance_input, 
-                                    lacunarity_input, point_count_input, max_height_input, dla_initial_input, dla_steps_input;
+    [SerializeField] private GameObject size_input, draw_mode_input, scale_input, seed_input, offset_x_input, offset_y_input, roughness_input, octaves_input, persistance_input, 
+                                    lacunarity_input, point_count_input, max_height_input, dla_initial_input, dla_steps_input, erosion_panel;
     [SerializeField] private TMP_Dropdown algorithm_dropdown, draw_mode_dropdown, size_dropdown;
     [SerializeField] private Slider scale_slider, seed_slider, offset_x_slider, offset_y_slider, roughness_slider, octaves_slider, persistance_slider, 
-                                    lacunarity_slider, point_count_slider, max_height_slider, dla_initial_slider, dla_steps_slider;
+                                    lacunarity_slider, point_count_slider, max_height_slider, dla_initial_slider, dla_steps_slider, erosion_iterations_slider, delta_time_slider;
     [SerializeField] private CinemachineVirtualCamera camera_on_plane, camera_on_terrain;
     private bool generate_on_input_change=false, use_fallof=false;
 
@@ -58,7 +58,36 @@ public class UIController : MonoBehaviour
         draw_mode = DrawMode.Mesh;
     }
 
-    public void ErodeMap() {
+ 
+
+    private Coroutine eroding_coroutine = null;
+    public void StartEroding() {
+        if(eroding_coroutine != null) {
+            Debug.LogWarning($"StartEroding: eroding_coroutine != null");
+            return;
+        }
+        int erosion_iteration = (int)erosion_iterations_slider.value;
+        float delta_time = delta_time_slider.value;
+        eroding_coroutine = StartCoroutine(ErodingCoroutine(erosion_iteration, delta_time));
+    }
+
+    public void StopEroding() {
+        if(eroding_coroutine == null) {
+            Debug.LogWarning($"StopEroding: eroding_coroutine == null");
+            return;
+        }
+        StopCoroutine(eroding_coroutine);
+        eroding_coroutine = null;
+    }
+
+    private IEnumerator ErodingCoroutine(int iteration_per_erode, float delta_time=0.1f) {
+        while(true) {
+            yield return new WaitForSeconds(delta_time);
+            ErodeMap(iteration_per_erode);
+        }
+    }
+
+       public void ErodeMap(int iterations=1) {
         if(map.GetLength(0) != map.GetLength(1)) {
             Debug.LogWarning($"map width({map.GetLength(0)}) != map height({map.GetLength(1)})");
             Debug.Break();
@@ -72,10 +101,9 @@ public class UIController : MonoBehaviour
                 map_array[i*size + j] = map[i,j];
             }
         }
-
-        int erosion_iteration = 1;
+        
         bool reset_seed = false;
-        erosion.Erode(map_array, size, erosion_iteration, reset_seed);
+        erosion.Erode(map_array, size, iterations, reset_seed);
 
         for(int i = 0; i<size; i++) {
             for(int j = 0; j<size; j++) {
@@ -85,6 +113,7 @@ public class UIController : MonoBehaviour
 
         ShowResult();
     }
+
 
     private float[,] map = null;
     public void Generate() {
@@ -156,7 +185,7 @@ public class UIController : MonoBehaviour
     }
 
     public void SetAlgorithm(int index) {
-        size_dropdown.gameObject.SetActive(true);
+        size_input.SetActive(true);
         algorithm = (HeightMapAlgorithm)index;
         seed_input.SetActive(false);
         scale_input.SetActive(false);
@@ -192,7 +221,7 @@ public class UIController : MonoBehaviour
                 point_count_input.SetActive(true);
             break;
             case HeightMapAlgorithm.DLA:
-                size_dropdown.gameObject.SetActive(false);
+                size_input.SetActive(false);
                 dla_initial_input.SetActive(true);
                 dla_steps_input.SetActive(true);
             break;

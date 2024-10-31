@@ -10,8 +10,9 @@ public enum DrawMode {
 public class MapDisplay : MonoBehaviour
 {
     [SerializeField] private Renderer texture_renderer;
-    [SerializeField] private MeshFilter meshFilter;
-    [SerializeField] private MeshRenderer meshRenderer;
+    [SerializeField] private MeshFilter mesh_filter;
+    [SerializeField] private MeshRenderer mesh_renderer;
+    [SerializeField] private MapGenerator map_generator;
     
     [SerializeField] private  TerrainType[] regions;
 
@@ -100,17 +101,18 @@ public class MapDisplay : MonoBehaviour
     public void DrawMesh(float[,] noise_map, Color[] colourMap, float height_multiplier, AnimationCurve mesh_height_curve, int level_of_detail, bool useFlatShading, bool is_in_editor=false) {        
 
         //Color[] color_map = CreateColorMap(noise_map);
-        MeshData data = MeshGenerator.GenerateTerrainMesh(noise_map, height_multiplier*meshRenderer.transform.localScale.x, mesh_height_curve, level_of_detail, useFlatShading);
+        MeshData data = MeshGenerator.GenerateTerrainMesh(noise_map, height_multiplier*mesh_renderer.transform.localScale.x, mesh_height_curve, level_of_detail, useFlatShading);
 
-        meshFilter.sharedMesh = data.CreateMesh();        
+        mesh_filter.sharedMesh = data.CreateMesh();    
+        //mesh_filter.transform.localScale = Vector2.one * map_generator.terrain_data.uniform_scale;
 
         int width = noise_map.GetLength(0);
         int height = noise_map.GetLength(1);
         if(is_in_editor) {
-            meshRenderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width-2, height-2); // problem !!!
+            mesh_renderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width-2, height-2); // problem !!!
 
         }else {
-            meshRenderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width, height); // problem !!!
+            mesh_renderer.sharedMaterial.mainTexture = CreateTexture(colourMap, width, height); // problem !!!
         }
     }
 

@@ -6,6 +6,7 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
+    [SerializeField] private float place_on_surface_delay = 0.1f;
     [SerializeField] private float ground_moving_speed = 5f;
     [SerializeField] private float air_moving_speed_mod = .8f;
     [SerializeField] private float jump_strength = 10f;
@@ -19,7 +20,7 @@ public class PlayerController : MonoBehaviour
         cam = Camera.main.transform;
         ground_layer = LayerMask.NameToLayer("Ground") ;
         controller = GetComponent<CharacterController>();
-        StartCoroutine(Delay(1f, PlacePlayerOnTerrainSurface));
+        StartCoroutine(Delay(place_on_surface_delay, PlacePlayerOnTerrainSurface));
         //PlacePlayerOnTerrainSurface();
     }
 

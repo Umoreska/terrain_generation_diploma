@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -10,5 +11,4 @@ public class MyTerrainData : UpdateableData
 	public bool useFalloff=false;
 	public float heightMultiplier; // scales y axis
 	public AnimationCurve mesh_height_curve;
-
 }
