@@ -23,7 +23,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
     public static Vector2 viewer_position, old_viewer_postition;
     public static Vector3 old_viewer_direction = Vector3.forward;
     [SerializeField] int chunk_size; 
-    [SerializeField] int chunkVisibleAmount; // in view distance
+    int chunkVisibleAmount; // in view distance
 
     Dictionary<Vector2, TerrainChunk> terrain_chunk_dictionary = new Dictionary<Vector2, TerrainChunk>();
     static private  List<TerrainChunk> visible_chunk_last_update = new List<TerrainChunk>();
@@ -34,7 +34,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
 
         max_view_dist = detailLevels[detailLevels.Length-1].visible_distance_threshold;
 
-        chunk_size = MapGenerator.mapChunkSize - 1;
+        chunk_size = mapGenerator.mapChunkSize - 1;
         chunkVisibleAmount = Mathf.RoundToInt(max_view_dist / chunk_size);
 
         UpdateVisibleChunks();
@@ -59,33 +59,6 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                 old_viewer_direction = currentForwardDirection;
             }
         }
-        /*switch(chunkUpdateMode) {
-            case ChunkUpdateMode.Square:
-                viewer_position = new Vector2(viewer.position.x, viewer.position.z) / mapGenerator.terrain_data.uniform_scale;
-                if( (old_viewer_postition - viewer_position).sqrMagnitude > squared_viewer_move_distance_threshold_for_update) {
-                    UpdateVisibleChunks();
-                    old_viewer_postition = viewer_position;
-                }
-            break;
-            case ChunkUpdateMode.OnlyView:
-                Vector3 currentForwardDirection = viewer.transform.forward;
-                float angleDifference = Vector3.Angle(old_viewer_direction, currentForwardDirection);
-                Debug.Log($"angle dif: {angleDifference}");
-                if (angleDifference >= viewer_rotate_angle_threshold_for_update) {
-                    UpdateVisibleChunks();
-                    old_viewer_direction = currentForwardDirection;
-                }
-            break;
-            case ChunkUpdateMode.ViewPreload:
-                viewer_position = new Vector2(viewer.position.x, viewer.position.z) / mapGenerator.terrain_data.uniform_scale;
-                currentForwardDirection = viewer.transform.forward;
-                angleDifference = Vector3.Angle(old_viewer_direction, currentForwardDirection);
-                if( (old_viewer_postition - viewer_position).sqrMagnitude > squared_viewer_move_distance_threshold_for_update || angleDifference >= viewer_rotate_angle_threshold_for_update) {
-                    UpdateVisibleChunks();
-                    old_viewer_direction = currentForwardDirection;
-                }
-            break;
-        }*/
         
     }
 
@@ -106,6 +79,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
         for(int offset_y = -chunkVisibleAmount; offset_y <= chunkVisibleAmount; offset_y++) {
             for(int offset_x = -chunkVisibleAmount; offset_x <= chunkVisibleAmount; offset_x++) {
                 Vector2 chunk_coord = new Vector2(current_chunk_coord_x + offset_x, current_chunk_coord_y + offset_y);
+                Vector3 chunk_position_on_scene = new Vector3(chunk_coord.x*chunk_size, 0, chunk_coord.y*chunk_size) * mapGenerator.terrain_data.uniform_scale;
 
                 if(offset_x == 0 && offset_y == 0) { // chunk viewer standing on
                     if(terrain_chunk_dictionary.ContainsKey(chunk_coord)) {
@@ -113,7 +87,16 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                     }else {
                         terrain_chunk_dictionary.Add(chunk_coord, new TerrainChunk(chunk_coord, chunk_size, detailLevels, this.transform, mapMaterial));
                     }
+                }else if(MathF.Abs(offset_x) == 1 || MathF.Abs(offset_y) == 1) {
+                    if(IsObjectInView(main_camera.transform.position, main_camera.transform.forward, chunk_position_on_scene, viewAngle) || true) {
+                        if(terrain_chunk_dictionary.ContainsKey(chunk_coord)) {
+                            terrain_chunk_dictionary[chunk_coord].UpdateChunk();
+                        }else {
+                            terrain_chunk_dictionary.Add(chunk_coord, new TerrainChunk(chunk_coord, chunk_size, detailLevels, this.transform, mapMaterial));
+                        }
+                    }
                 }
+                
 
                 switch (chunkUpdateMode) {
                     case ChunkUpdateMode.Square: // load and show chunk around
@@ -124,9 +107,8 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                         }
                     break;
                     case ChunkUpdateMode.OnlyView: // load and show only chunks in view
-                        Vector3 chunk_position_on_scene = new Vector3(chunk_coord.x*chunk_size, 0, chunk_coord.y*chunk_size) * mapGenerator.terrain_data.uniform_scale;
                     
-                        if(IsObjectInView(main_camera.transform.position, main_camera.transform.forward, viewAngle, chunk_position_on_scene)) {
+                        if(IsObjectInView(main_camera.transform.position, main_camera.transform.forward, chunk_position_on_scene, viewAngle)) {
                             if(terrain_chunk_dictionary.ContainsKey(chunk_coord)) {
                                 terrain_chunk_dictionary[chunk_coord].UpdateChunk();
                             }else {
@@ -141,9 +123,8 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                             terrain_chunk_dictionary.Add(chunk_coord, new TerrainChunk(chunk_coord, chunk_size, detailLevels, this.transform, mapMaterial));
                         }
                         var chunk = terrain_chunk_dictionary[chunk_coord];
-                        chunk_position_on_scene = new Vector3(chunk_coord.x*chunk_size, 0, chunk_coord.y*chunk_size) * mapGenerator.terrain_data.uniform_scale;
                     
-                        if(IsObjectInView(main_camera.transform.position, main_camera.transform.forward, viewAngle, chunk_position_on_scene)) {
+                        if(IsObjectInView(main_camera.transform.position, main_camera.transform.forward, chunk_position_on_scene, viewAngle)) {
                             //chunk.SetVisible(true);
                             chunk.UpdateChunk();
                         }
@@ -179,8 +160,20 @@ public class InfiniteTerrainGeneration : MonoBehaviour
     }
 
 
-     private static bool IsObjectInView(Vector3 playerPosition, Vector3 forwardDirection, float viewAngle, Vector3 objectPosition) {
+     private static bool IsObjectInView(Vector3 playerPosition, Vector3 forwardDirection, Vector3 objectPosition, float viewAngle) {
         return CalculateAngle(playerPosition, forwardDirection, objectPosition) <= (viewAngle / 2);
+    }
+
+    
+    public bool IsChunkOnRightOrLeft(Vector3 player_pos, Vector3 looking_dir, Vector3 chunk_pos, float angle_threshold) {
+        Vector3 direction_to_chunk = (chunk_pos - player_pos).normalized;
+
+        float angle_to_chunk = Vector3.Angle(looking_dir, direction_to_chunk);
+
+        bool is_left_side = Mathf.Abs(angle_to_chunk - 90f) <= angle_threshold;
+        bool is_right_side = Mathf.Abs(angle_to_chunk + 90f) <= angle_threshold;
+
+        return is_left_side || is_right_side;
     }
 
     public class TerrainChunk{
@@ -225,7 +218,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
             lod_meshes = new LODMesh[detail_level.Length];
 
             for(int i = 0; i <lod_meshes.Length; i++) {
-                lod_meshes[i] = new LODMesh(detail_level[i].lod, ()=> {UpdateChunk(false);} ); // preloadView chunkUpdateMode problem here <-------------------------!
+                lod_meshes[i] = new LODMesh(detail_level[i].lod, ()=> {UpdateChunk();} ); // preloadView chunkUpdateMode problem here <-------------------------!
                 if(detail_level[i].use_for_collider) {
                     collision_lod = lod_meshes[i];
                 }
@@ -238,11 +231,10 @@ public class InfiniteTerrainGeneration : MonoBehaviour
             this.map_data = map_data;
             map_data_received = true;
 
-            Texture2D texture2D = TextureGenerator.TextureFromColorMap(map_data.colorMap, MapGenerator.mapChunkSize, MapGenerator.mapChunkSize);
-
+            Texture2D texture2D = TextureGenerator.TextureFromColorMap(map_data.colorMap, mapGenerator.mapChunkSize, mapGenerator.mapChunkSize);
             meshRenderer.material.mainTexture = texture2D;
             
-            UpdateChunk(false); // preloadView chunkUpdateMode problem here <-------------------------!
+            UpdateChunk(); // preloadView chunkUpdateMode problem here <-------------------------!
         }
 
         public void UpdateChunk(bool show_after_loaded=true) {
@@ -267,7 +259,7 @@ public class InfiniteTerrainGeneration : MonoBehaviour
                 }
 
                 // creating mesh with gotten level of detail
-                if(lod_index != prev_lod_index) { // THE MOMENT IT OBJECT GETS MESH AND COLLIDER <---------------------
+                if(lod_index != prev_lod_index) {
                     LODMesh lod_mesh = lod_meshes[lod_index];
                     if(lod_mesh.has_mesh) {
                         meshFilter.mesh = lod_mesh.mesh;

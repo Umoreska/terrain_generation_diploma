@@ -1,7 +1,7 @@
 using Unity.Burst.Intrinsics;
 using UnityEditor.Rendering;
 using UnityEngine;
-using Unity.Mathematics;
+//using Unity.Mathematics;
 
 public class FractalPerlinNoise {
     public int size = 256;
@@ -17,6 +17,58 @@ public class FractalPerlinNoise {
 
     public enum Noise{
         UnityPerlin, PerlinImplementaion, ImprovedNoise2D, FastNoiseLitePerlin, FastNoiseLiteSimplex  
+    }
+
+
+    public ComputeShader heightMapComputeShader;
+    float[] GenerateHeightMapGPU (int mapSize, int numOctaves, bool randomizeSeed, float initialScale=2f) {
+        seed = (randomizeSeed) ? Random.Range(-10000, 10000) : seed;
+        var prng = new System.Random (seed);
+
+        Vector2[] offsets = new Vector2[numOctaves];
+        for (int i = 0; i < numOctaves; i++) {
+            offsets[i] = new Vector2 (prng.Next (-10000, 10000), prng.Next (-10000, 10000));
+        }
+        ComputeBuffer offsetsBuffer = new ComputeBuffer (offsets.Length, sizeof (float) * 2);
+        offsetsBuffer.SetData (offsets);
+        heightMapComputeShader.SetBuffer (0, "offsets", offsetsBuffer);
+
+        int floatToIntMultiplier = 1000;
+        float[] map = new float[mapSize * mapSize];
+
+        ComputeBuffer mapBuffer = new ComputeBuffer (map.Length, sizeof (int));
+        mapBuffer.SetData (map);
+        heightMapComputeShader.SetBuffer (0, "heightMap", mapBuffer);
+
+        int[] minMaxHeight = { floatToIntMultiplier * numOctaves, 0 };
+        ComputeBuffer minMaxBuffer = new ComputeBuffer (minMaxHeight.Length, sizeof (int));
+        minMaxBuffer.SetData (minMaxHeight);
+        heightMapComputeShader.SetBuffer (0, "minMax", minMaxBuffer);
+
+        heightMapComputeShader.SetInt ("mapSize", mapSize);
+        heightMapComputeShader.SetInt ("octaves", numOctaves);
+        heightMapComputeShader.SetFloat ("lacunarity", lacunarity);
+        heightMapComputeShader.SetFloat ("persistence", persistence);
+        heightMapComputeShader.SetFloat ("scaleFactor", initialScale);
+        heightMapComputeShader.SetInt ("floatToIntMultiplier", floatToIntMultiplier);
+        heightMapComputeShader.SetInt("heightMapSize", map.Length);
+
+        //SebStuff.Helpers.ComputeHelper.Dispatch(heightMapComputeShader, map.Length); // <----- look in Sebastian Lague git
+
+        mapBuffer.GetData (map);
+        minMaxBuffer.GetData (minMaxHeight);
+        mapBuffer.Release ();
+        minMaxBuffer.Release ();
+        offsetsBuffer.Release ();
+
+        float minValue = (float) minMaxHeight[0] / (float) floatToIntMultiplier;
+        float maxValue = (float) minMaxHeight[1] / (float) floatToIntMultiplier;
+
+        for (int i = 0; i < map.Length; i++) {
+            map[i] = Mathf.InverseLerp (minValue, maxValue, map[i]);
+        }
+
+        return map;
     }
 
 

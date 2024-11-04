@@ -41,9 +41,16 @@ Material:
     m_Floats:
     - _QueueControl: 0
     - _QueueOffset: 0
+    - _edge11: 4.9
+    - _edge12: 13
+    - _edge21: 0
+    - _edge22: 0
+    - _max_height: 0
+    - _min_height: 0
     m_Colors:
-    - _max: {r: 0, g: 1, b: 0.15672159, a: 1}
-    - _min: {r: 0, g: 0.31321073, b: 1, a: 1}
+    - _max: {r: 0.3283019, g: 0.18393578, b: 0.16043432, a: 1}
+    - _mid: {r: 0, g: 0.5686275, b: 0.040311057, a: 1}
+    - _min: {r: 0.14117643, g: 0.54991436, b: 0.8117647, a: 1}
     - _min_max: {r: 0, g: 1, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

@@ -4,18 +4,47 @@ using Unity.Mathematics;
 using UnityEngine;
 using System;
 using System.Diagnostics.Tracing;
-
+public enum TestMode {
+    Noise, Mesh, ChunkUpdate
+}
 public class Tester : MonoBehaviour
 {
+    [SerializeField] private TestMode test_mode;
     [SerializeField] private int size = 241;
     [SerializeField] private float noiseScale = 50f;
     [SerializeField] private int octaves = 4;
     [SerializeField] private float heightMultiplier;
     [SerializeField] private AnimationCurve mesh_height_curve;
     [SerializeField] private Material mesh_material, terrain_material;
+    [SerializeField] private InfiniteTerrainGeneration infiniteTerrainGeneration;
+    [SerializeField] private GameObject player;
+    [SerializeField] private float player_speed, rotation_speed;
     void Start()
     {
-        TestBuiltInNoiseAndImprovedNoiseSpeed();
+        infiniteTerrainGeneration.enabled = false;
+        switch(test_mode) {
+            case TestMode.Noise:
+            // test noise generation
+            TestBuiltInNoiseAndImprovedNoiseSpeed();
+            break;
+            case TestMode.Mesh:
+            // test mesh creation
+            TestMeshTerrainSpeedGeneration();
+            break;
+            case TestMode.ChunkUpdate:
+            // 
+            infiniteTerrainGeneration.enabled = true;
+            StartCoroutine(MovePlayerOnTerrain());
+            break;
+        }
+    }
+
+    private IEnumerator MovePlayerOnTerrain() {
+        while(true){
+            player.transform.position += player_speed * Time.deltaTime * Vector3.forward;
+            player.transform.Rotate(0, rotation_speed * Time.deltaTime, 0);
+            yield return null;
+        }
     }
 
     public void TestMeshTerrainSpeedGeneration() {

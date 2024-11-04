@@ -13,6 +13,8 @@ public class MapGenerator : MonoBehaviour {
 
 	public NoiseData noise_data;
 	public MyTerrainData terrain_data;
+	public TextureData texture_data;
+	public Material terrain_material;
 
 	[Range(0,6)]
 	public int editorPreviewLevelOfDetail;
@@ -25,9 +27,6 @@ public class MapGenerator : MonoBehaviour {
 
 	private float[,] falloff_map;
 
-
-	public static MapGenerator Instance;
-
 	private void Awake() {
 		//falloff_map = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
 	}
@@ -38,13 +37,14 @@ public class MapGenerator : MonoBehaviour {
 		}
 	}
 
+	private void OnTextureValuesupdated() {
+		//texture_data.ApplyTextureToMaterial(terrain_material);
+	}
 
-	public static int mapChunkSize {
+
+	public int mapChunkSize {
 		get{
-			if(Instance == null) {
-				Instance = FindFirstObjectByType<MapGenerator>();
-			}
-			if(Instance.terrain_data.useFlatShading) {
+			if(terrain_data.useFlatShading) {
 				return 95;
 			}else {
 				return 239;
@@ -86,11 +86,13 @@ public class MapGenerator : MonoBehaviour {
 			}
 		}
 
+		//texture_data.UpdateMeshHeights(terrain_material, terrain_data.MinHegith, terrain_data.MaxHegith);
+
 		return new MapData(noiseMap, colorMap);
 
 	}
 
-	public void RequestMapData(Vector2 center, Action<MapData> callback) {
+	public void RequestMapData(Vector2 center, Action<MapData> callback) { // used in TerrainChunk
 		ThreadStart threadStart = ()=> {
 			MapDataThread(center, callback);
 		};
@@ -104,7 +106,7 @@ public class MapGenerator : MonoBehaviour {
 	}
 
 
-	public void RequestMeshData(MapData mapData,  int lod, Action<MeshData> callback) {
+	public void RequestMeshData(MapData mapData,  int lod, Action<MeshData> callback) { // used in LODMesh
 		ThreadStart threadStart = ()=> {
 			MeshDataThread(mapData, lod, callback);
 		};
@@ -158,6 +160,11 @@ public class MapGenerator : MonoBehaviour {
 		if(noise_data != null) {
 			noise_data.on_value_updated -= OnValuesUpdated;
 			noise_data.on_value_updated += OnValuesUpdated;
+		}
+
+		if(texture_data != null) {
+			texture_data.on_value_updated -= OnTextureValuesupdated;
+			texture_data.on_value_updated += OnTextureValuesupdated;
 		}
 		
 	}

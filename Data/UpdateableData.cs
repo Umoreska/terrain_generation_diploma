@@ -9,11 +9,12 @@ public class UpdateableData : ScriptableObject
 
     protected virtual void OnValidate() { // it is called when value is changed in the unity inspector
         if(auto_update) {
-            NotifyOfUpdatedValues();
+            UnityEditor.EditorApplication.update += NotifyOfUpdatedValues;
         }
     }
 
     public void NotifyOfUpdatedValues() {
+        UnityEditor.EditorApplication.update -= NotifyOfUpdatedValues;
         on_value_updated?.Invoke();
     }
 

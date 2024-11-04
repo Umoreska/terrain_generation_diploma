@@ -11,4 +11,12 @@ public class MyTerrainData : UpdateableData
 	public bool useFalloff=false;
 	public float heightMultiplier; // scales y axis
 	public AnimationCurve mesh_height_curve;
+
+	public float MinHegith{
+		get => uniform_scale * heightMultiplier * mesh_height_curve.Evaluate(0);
+	}
+
+	public float MaxHegith{
+		get => uniform_scale * heightMultiplier * mesh_height_curve.Evaluate(1);
+	}
 }
